@@ -48,15 +48,17 @@ const ACTION_CONFIG = {
     label: 'Resolve',
     icon: Check,
     title: 'Resolve this alert',
-    description: 'Marks this case as closed. This is a terminal state.',
+    description: 'Marks this case as closed. This is a terminal state. Note is required.',
   },
   DISMISS: {
     label: 'Dismiss',
     icon: XCircle,
     title: 'Dismiss this alert',
-    description: 'Marks this as a false positive. This is a terminal state.',
+    description: 'Marks this as a false positive. This is a terminal state. Note is required.',
   },
 };
+
+const NOTE_REQUIRED_ACTIONS = new Set(['ESCALATE', 'RESOLVE', 'DISMISS']);
 
 /**
  * @param {{
@@ -81,6 +83,11 @@ export function AlertActions({ alertId, availableActions, owners }) {
   async function handleConfirm(action) {
     if (action === 'ESCALATE' && !escalateToOwnerId) {
       toast.error('Select who to escalate this alert to.');
+      return;
+    }
+
+    if (NOTE_REQUIRED_ACTIONS.has(action) && !note.trim()) {
+      toast.error(`${ACTION_CONFIG[action].label} requires a note before it can be submitted.`);
       return;
     }
 
@@ -177,7 +184,7 @@ export function AlertActions({ alertId, availableActions, owners }) {
 
               <div className="flex flex-col gap-1">
                 <label className="text-xs text-slate-500">
-                  Note {action === 'ESCALATE' ? '(required)' : '(optional)'}
+                  Note {NOTE_REQUIRED_ACTIONS.has(action) ? '(required)' : '(optional)'}
                 </label>
                 <Textarea
                   value={note}

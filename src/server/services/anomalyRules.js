@@ -3,6 +3,8 @@ import { prisma } from '../../lib/prisma';
 const HIDDEN_SHORTAGE_PROVIDER_SHARE_THRESHOLD = 0.10;
 const HIDDEN_SHORTAGE_HIGH_CONFIDENCE_SHARE = 0.05;
 const MIN_HEALTHY_TOTAL_LIQUIDITY = 20000;
+/** Horizon the top-up recommendation is sized against ("survive N more hours at this burn rate"). */
+const TARGET_SURVIVAL_HOURS = 4;
 const VELOCITY_WINDOW_MINUTES = 15;
 const VELOCITY_TRANSACTION_COUNT_THRESHOLD = 5;
 const AMOUNT_CLUSTER_TOLERANCE = 0.08;
@@ -52,18 +54,42 @@ async function hiddenShortageRule(agentId) {
   });
   
   const hourlyBurnRate = recentCashOuts.reduce((sum, t) => sum + t.amount.toNumber(), 0) / 2;
-  const hoursUntilDepletion = hourlyBurnRate > 0 ? (thinnest.balance / hourlyBurnRate) : null;
+
+  // Defensive clamp: a provider's e-money balance can't realistically go
+  // negative. Repeated test/demo simulations against the same agent can
+  // drive the raw stored balance below zero; treat it as fully depleted
+  // (0) for this recommendation's math rather than producing a
+  // nonsensical negative percentage or negative minutes-to-depletion.
+  const safeBalance = Math.max(0, thinnest.balance);
+
+  const hoursUntilDepletion = hourlyBurnRate > 0 ? (safeBalance / hourlyBurnRate) : null;
+
+  // "How much additional liquidity is required?" — sized to survive
+  // TARGET_SURVIVAL_HOURS more at the current burn rate.
+  const requiredTopUp =
+    hourlyBurnRate > 0
+      ? Math.max(0, Math.round(hourlyBurnRate * TARGET_SURVIVAL_HOURS - safeBalance))
+      : null;
 
   const baseConfidence = thinnest.share < HIDDEN_SHORTAGE_HIGH_CONFIDENCE_SHARE ? 'HIGH' : 'MEDIUM';
+
+  const recommendedAction = requiredTopUp
+    ? `Arrange approximately ৳${requiredTopUp.toLocaleString('en-US')} in additional ${thinnest.providerCode} liquidity within the next ${TARGET_SURVIVAL_HOURS} hours to avoid service disruption.`
+    : 'Contact agent to arrange immediate physical cash support or provider-specific rebalancing.';
+
+  // Same clamp applied to the displayed share, so the reason text never
+  // states a negative percentage even if the underlying test data has
+  // driven this provider's balance below zero.
+  const displayShare = Math.max(0, thinnest.share);
 
   return {
     scenarioType: 'HIDDEN_SHORTAGE',
     agentId,
     providerId: thinnest.providerId,
     confidence: baseConfidence,
-    confidenceReason: `${thinnest.providerCode} holds ${(thinnest.share * 100).toFixed(1)}% of total liquidity. ${hoursUntilDepletion ? `At current velocity, balance will deplete in ~${(hoursUntilDepletion * 60).toFixed(0)} minutes.` : ''}`,
+    confidenceReason: `${thinnest.providerCode} holds ${(displayShare * 100).toFixed(1)}% of total liquidity. ${hoursUntilDepletion ? `At current velocity, balance will deplete in ~${(hoursUntilDepletion * 60).toFixed(0)} minutes.` : ''}`,
     targetStakeholder: 'AREA_MANAGER',
-    recommendedAction: 'Contact agent to arrange immediate physical cash support or provider-specific rebalancing.',
+    recommendedAction,
     evidence: {
       totalLiquidity,
       physicalCash,
@@ -76,6 +102,8 @@ async function hiddenShortageRule(agentId) {
       },
       hourlyBurnRate,
       projectedDepletionMinutes: hoursUntilDepletion ? Math.round(hoursUntilDepletion * 60) : null,
+      requiredTopUp,
+      targetSurvivalHours: TARGET_SURVIVAL_HOURS,
       thresholdBreached: 'HIDDEN_SHORTAGE_PROVIDER_SHARE_THRESHOLD',
     },
   };

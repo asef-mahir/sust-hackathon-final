@@ -48,7 +48,11 @@ export async function GET(request) {
       where,
       take: take + 1,
       ...(cursor && { skip: 1, cursor: { id: cursor } }),
-      orderBy: { createdAt: sortOrder ?? 'desc' },
+      // Severity first (HIGH -> MEDIUM -> LOW, matching ConfidenceLevel's
+      // declared enum order — verified empirically against this DB), then
+      // recency as the tiebreaker within each severity tier. Without this,
+      // a stale LOW-confidence alert could sit above a fresh HIGH one.
+      orderBy: [{ confidence: 'asc' }, { createdAt: sortOrder ?? 'desc' }],
       include: {
         agent: {
           select: { id: true, name: true, outletCode: true, areaId: true },
