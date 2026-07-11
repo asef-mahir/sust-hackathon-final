@@ -119,13 +119,40 @@ export async function POST(request) {
       const existing = await findExistingOpenAlert(finding);
 
       if (existing) {
-        alertsSuppressed.push({
+        // OVERWRITE LOGIC: Updates the old alert details with the new dynamic telemetry data!
+        const provider = finding.providerId
+          ? await prisma.provider.findUnique({ where: { id: finding.providerId } })
+          : null;
+
+        // 1. Fire off the fresh calculations to OpenAI
+        const advisory = await generateAlertAdvisory({
           scenarioType: finding.scenarioType,
-          existingAlertId: existing.id,
+          providerCode: provider?.code ?? 'UNKNOWN',
+          confidence: finding.confidence,
+          confidenceReason: finding.confidenceReason,
+          evidence: finding.evidence,
+          recommendedAction: finding.recommendedAction,
+          targetStakeholder: finding.targetStakeholder,
         });
+
+        // 2. Update the existing row in the database
+        const updatedAlert = await prisma.alert.update({
+          where: { id: existing.id },
+          data: {
+            confidence: finding.confidence,
+            confidenceReason: finding.confidenceReason,
+            evidence: finding.evidence,
+            explanations: advisory.explanations,
+            source: advisory.source === 'AI' ? 'HYBRID' : 'RULE_BASED',
+            createdAt: new Date(), // Bumps the card to the top of the feed list
+          },
+        });
+
+        alertsCreated.push(updatedAlert);
         continue;
       }
 
+      // Otherwise create a normal new alert...
       const alert = await createAlertFromFinding(finding);
       alertsCreated.push(alert);
     }

@@ -15,7 +15,6 @@ function randomAmountBetween(rng, min, max) {
 }
 
 function generateHiddenShortageScenario({ targetProviderId, rng, intensity = 1.0 }) {
-  // Scales based on intensity multiplier
   const transactionCount = Math.floor(5 * intensity);
   const transactions = [];
   let cumulativeOffsetMs = 0;
@@ -47,7 +46,6 @@ function generateHighVelocityScenario({ targetProviderId, rng, intensity = 1.0 }
       type: 'CASH_OUT',
       amount: Math.round(clusterBaseAmount * (0.96 + rng() * 0.08)),
       timestamp: new Date(Date.now() - (12 * 60_000 - cumulativeOffsetMs)),
-      // Cycles cleanly through synthetic accounts regardless of intensity length
       syntheticAccountId: SYNTHETIC_ACCOUNTS[i % SYNTHETIC_ACCOUNTS.length] ?? null, 
     });
   }
@@ -103,7 +101,7 @@ export async function runSimulationScenario({
   agentId,
   targetProviderId,
   seed = Date.now(),
-  intensity = 1.0, // Exposes intensity scaling to the API route
+  intensity = 1.0,
 }) {
   const generator = SCENARIO_GENERATORS[scenarioType];
   if (!generator) {
@@ -128,24 +126,31 @@ export async function runSimulationScenario({
     let runningPhysicalCash = agent.physicalCash;
     let runningProviderBalance = providerBalanceRow.balance;
 
-    for (const txnInput of syntheticTransactions) {
-      const updated = applyBalanceEffect({ physicalCash: runningPhysicalCash, providerBalance: runningProviderBalance }, txnInput);
+    // Map elements in memory first to prevent N+1 query loop patterns
+    const transactionsToInsert = syntheticTransactions.map((txnInput) => {
+      const updated = applyBalanceEffect(
+        { physicalCash: runningPhysicalCash, providerBalance: runningProviderBalance },
+        txnInput
+      );
       runningPhysicalCash = updated.physicalCash;
       runningProviderBalance = updated.providerBalance;
 
-      await tx.transaction.create({
-        data: {
-          agentId,
-          providerId: txnInput.providerId,
-          type: txnInput.type,
-          amount: txnInput.amount,
-          isLate: txnInput.isLate ?? false,
-          isConflicting: txnInput.isConflicting ?? false,
-          timestamp: txnInput.timestamp ?? new Date(),
-          syntheticAccountId: txnInput.syntheticAccountId ?? null,
-        },
-      });
-    }
+      return {
+        agentId,
+        providerId: txnInput.providerId,
+        type: txnInput.type,
+        amount: txnInput.amount,
+        isLate: txnInput.isLate ?? false,
+        isConflicting: txnInput.isConflicting ?? false,
+        timestamp: txnInput.timestamp ?? new Date(),
+        syntheticAccountId: txnInput.syntheticAccountId ?? null,
+      };
+    });
+
+    // FIXED: Batched database insert execution drops write speeds down drastically
+    await tx.transaction.createMany({
+      data: transactionsToInsert,
+    });
 
     await tx.agent.update({
       where: { id: agentId },
