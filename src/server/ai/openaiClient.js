@@ -10,10 +10,12 @@ const openai = new OpenAI({
 
 /**
  * @typedef {Object} AdvisoryFinding
- * @property {'HIDDEN_SHORTAGE' | 'HIGH_VELOCITY'} scenarioType
+ * @property {'HIDDEN_SHORTAGE' | 'HIGH_VELOCITY' | 'DATA_INCONSISTENCY'} scenarioType
  * @property {string} providerCode - e.g. 'BKASH', 'NAGAD', 'ROCKET'
  * @property {'HIGH' | 'MEDIUM' | 'LOW'} confidence - rule-engine confidence
  * @property {string} confidenceReason - rule-engine's own explanation string
+ * @property {string} recommendedAction - operational next step from rule engine
+ * @property {string} targetStakeholder - who should own this alert
  * @property {Object} evidence - the structured evidence object from anomalyRules.js
  */
 
@@ -28,11 +30,8 @@ const openai = new OpenAI({
  * @typedef {Object} AdvisoryResult
  * @property {'AI' | 'FALLBACK'} source
  * @property {{ en: LocalizedAdvisory, bn: LocalizedAdvisory, banglish: LocalizedAdvisory }} explanations
- * @property {ConfidenceLevelOrNull} aiConfidence - informational only
  * @property {string} [errorReason] - present only when source === 'FALLBACK'
  */
-
-/** @typedef {'HIGH' | 'MEDIUM' | 'LOW' | null} ConfidenceLevelOrNull */
 
 /**
  * Zod schema the raw OpenAI JSON response must satisfy before we trust it.
@@ -47,7 +46,6 @@ const advisoryResponseSchema = z.object({
   en: localizedAdvisorySchema,
   bn: localizedAdvisorySchema,
   banglish: localizedAdvisorySchema,
-  confidence: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
 });
 
 /**
@@ -64,19 +62,22 @@ function buildAdvisoryPrompt(finding) {
     'Never suggest moving or converting funds between different providers (e.g. never suggest moving bKash balance to cover a Rocket shortage) — providers are separate systems.',
     'Use careful, uncertain language such as "may indicate" or "requires review" rather than definitive claims.',
     'Respond with strict JSON only, matching this exact shape, no markdown, no commentary outside the JSON:',
-    '{"en":{"reason":"","evidence":"","nextStep":""},"bn":{"reason":"","evidence":"","nextStep":""},"banglish":{"reason":"","evidence":"","nextStep":""},"confidence":"HIGH|MEDIUM|LOW"}',
+    '{"en":{"reason":"","evidence":"","nextStep":""},"bn":{"reason":"","evidence":"","nextStep":""},"banglish":{"reason":"","evidence":"","nextStep":""}}',
     'Each "reason" explains what pattern was found, in plain language, under 40 words.',
     'Each "evidence" summarizes the specific numbers/facts backing it, under 40 words.',
     'Each "nextStep" is a safe, advisory-only recommendation (e.g. "flag for operations review", "confirm with agent"), under 25 words, never an automated action.',
     '"bn" must be written in Bengali script. "banglish" must be Bengali written in Latin script (transliterated), not English translation.',
   ].join(' ');
 
+  // Token Optimization: Strip large ID arrays from the evidence payload to reduce latency
+  const { contributingTransactionIds, ...safeEvidence } = finding.evidence || {};
+
   const user = JSON.stringify({
     scenarioType: finding.scenarioType,
     providerCode: finding.providerCode,
-    ruleEngineConfidence: finding.confidence,
     ruleEngineConfidenceReason: finding.confidenceReason,
-    evidence: finding.evidence,
+    recommendedAction: finding.recommendedAction,
+    evidence: safeEvidence,
   });
 
   return { system, user };
@@ -93,11 +94,13 @@ function buildFallbackAdvisory(finding) {
   const scenarioLabelEn =
     finding.scenarioType === 'HIDDEN_SHORTAGE'
       ? 'a possible hidden liquidity shortage'
-      : 'unusually clustered high-velocity transactions';
+      : finding.scenarioType === 'HIGH_VELOCITY'
+      ? 'unusually clustered high-velocity transactions'
+      : 'data inconsistency across providers';
 
   const reasonEn = `Rule-based alert: ${scenarioLabelEn} detected for ${finding.providerCode}. ${finding.confidenceReason}`;
   const evidenceEn = `See attached evidence for exact figures and thresholds breached.`;
-  const nextStepEn = `Flag for operations review; confirm current balance directly with the agent before taking action.`;
+  const nextStepEn = finding.recommendedAction || `Flag for operations review; confirm current balance directly with the agent before taking action.`;
 
   return {
     en: { reason: reasonEn, evidence: evidenceEn, nextStep: nextStepEn },
@@ -137,7 +140,6 @@ export async function generateAlertAdvisory(finding) {
     return {
       source: 'FALLBACK',
       explanations: buildFallbackAdvisory(finding),
-      aiConfidence: null,
       errorReason: 'OPENAI_API_KEY not configured',
     };
   }
@@ -173,13 +175,11 @@ export async function generateAlertAdvisory(finding) {
         bn: validated.bn,
         banglish: validated.banglish,
       },
-      aiConfidence: validated.confidence ?? null,
     };
   } catch (error) {
     return {
       source: 'FALLBACK',
       explanations: buildFallbackAdvisory(finding),
-      aiConfidence: null,
       errorReason: error instanceof Error ? error.message : 'Unknown error',
     };
   }

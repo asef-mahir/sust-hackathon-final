@@ -7,13 +7,18 @@ const VALID_TRANSITIONS = {
   },
   ACKNOWLEDGED: {
     START_PROGRESS: 'IN_PROGRESS',
-    ESCALATE: 'IN_PROGRESS',
+    ESCALATE: 'ESCALATED', // Shifted to a distinct state
     DISMISS: 'DISMISSED',
   },
   IN_PROGRESS: {
-    ESCALATE: 'IN_PROGRESS', // self-loop: reassignment only
+    ESCALATE: 'ESCALATED',
     RESOLVE: 'RESOLVED',
     DISMISS: 'DISMISSED',
+  },
+  ESCALATED: {
+    ACKNOWLEDGE: 'IN_PROGRESS', // Receiver acknowledges the escalation
+    RESOLVE: 'RESOLVED',
+    DISMISS: 'DISMISSED'
   },
   RESOLVED: {},
   DISMISSED: {},
@@ -31,10 +36,6 @@ function resolveTransition(fromStatus, action) {
   return VALID_TRANSITIONS[fromStatus]?.[action] ?? null;
 }
 
-/**
- * Applies a single action to an alert: validates legality, updates status
- * (and ownership, where relevant), and writes an AlertEvent — atomically.
- */
 export async function transitionAlert({
   alertId,
   action,
@@ -43,37 +44,47 @@ export async function transitionAlert({
   escalateToOwnerId,
 }) {
   if (action === 'ESCALATE' && !escalateToOwnerId) {
-    throw new AlertTransitionError(
-      'ESCALATE action requires escalateToOwnerId (the Owner the alert is being handed off to).',
-      { alertId, currentStatus: 'UNKNOWN', action }
-    );
+    throw new AlertTransitionError('ESCALATE action requires escalateToOwnerId.', { alertId, action });
+  }
+
+  if ((action === 'RESOLVE' || action === 'DISMISS') && !note) {
+    throw new AlertTransitionError(`${action} requires a mandatory resolution note to track false positives.`, { alertId, action });
   }
 
   return prisma.$transaction(async (tx) => {
-    const currentAlert = await tx.alert.findUnique({ where: { id: alertId } });
+    const currentAlert = await tx.alert.findUnique({ 
+        where: { id: alertId },
+        include: { provider: true } 
+    });
 
     if (!currentAlert) {
-      throw new AlertTransitionError(`Alert not found: ${alertId}`, {
-        alertId,
-        currentStatus: 'UNKNOWN',
-        action,
-      });
+      throw new AlertTransitionError(`Alert not found: ${alertId}`, { alertId, action });
+    }
+
+    // PROVIDER BOUNDARY ENFORCEMENT
+    const actor = await tx.owner.findUnique({ where: { id: actorId } });
+    if (!actor) throw new AlertTransitionError('Actor not found', { actorId });
+
+    if (currentAlert.providerId) {
+      // Assuming role structure like 'PROVIDER_BKASH', 'PROVIDER_NAGAD', or 'SUPER_AGENT'
+      const isSuperAgent = actor.role === 'SUPER_AGENT';
+      const isCorrectProvider = actor.role === `PROVIDER_${currentAlert.provider.code}`;
+      
+      if (!isSuperAgent && !isCorrectProvider) {
+         throw new AlertTransitionError(`Security Block: Cannot access data belonging to ${currentAlert.provider.code}`, { alertId, actorId });
+      }
     }
 
     const fromStatus = currentAlert.status;
     const toStatus = resolveTransition(fromStatus, action);
 
     if (!toStatus) {
-      throw new AlertTransitionError(
-        `Action "${action}" is not valid from status "${fromStatus}".`,
-        { alertId, currentStatus: fromStatus, action }
-      );
+      throw new AlertTransitionError(`Action "${action}" is not valid from status "${fromStatus}".`, { alertId, action });
     }
 
     const updateData = { status: toStatus };
 
     if (action === 'ACKNOWLEDGE' && !currentAlert.ownerId) {
-      // First responder claims ownership implicitly, if nobody owns it yet.
       updateData.ownerId = actorId;
       updateData.assignedAt = new Date();
     }
@@ -98,10 +109,7 @@ export async function transitionAlert({
         fromStatus,
         toStatus,
         actorId,
-        note:
-          action === 'ESCALATE'
-            ? `Escalated to owner ${escalateToOwnerId}.${note ? ` ${note}` : ''}`
-            : note ?? null,
+        note: action === 'ESCALATE' ? `Escalated to owner ${escalateToOwnerId}. ${note || ''}` : note,
       },
     });
 
@@ -109,16 +117,10 @@ export async function transitionAlert({
   });
 }
 
-/**
- * Returns the set of actions currently valid for a given status — used by the UI
- */
 export function getAvailableActions(status) {
   return Object.keys(VALID_TRANSITIONS[status] ?? {});
 }
 
-/**
- * Convenience read: full audit timeline for an alert, oldest first
- */
 export async function getAlertTimeline(alertId) {
   return prisma.alertEvent.findMany({
     where: { alertId },

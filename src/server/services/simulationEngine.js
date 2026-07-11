@@ -2,7 +2,7 @@ import { prisma } from '../../lib/prisma';
 import { Prisma } from '@prisma/client';
 
 /**
- * @typedef {'HIDDEN_SHORTAGE' | 'HIGH_VELOCITY'} SupportedScenarioType
+ * @typedef {'HIDDEN_SHORTAGE' | 'HIGH_VELOCITY' | 'DATA_INCONSISTENCY'} SupportedScenarioType
  */
 
 /**
@@ -49,6 +49,7 @@ function randomAmountBetween(rng, min, max) {
 
 /**
  * Scenario A — Hidden Provider Shortage.
+ * Drains the agent's electronic balance via CASH_IN transactions.
  */
 function generateHiddenShortageScenario({ targetProviderId, rng }) {
   const transactionCount = 5;
@@ -59,7 +60,7 @@ function generateHiddenShortageScenario({ targetProviderId, rng }) {
     cumulativeOffsetMs += randomAmountBetween(rng, 30_000, 180_000); 
     transactions.push({
       providerId: targetProviderId,
-      type: 'CASH_OUT',
+      type: 'CASH_IN', // Correct MFS Domain Logic: CASH_IN reduces the agent's e-money position
       amount: randomAmountBetween(rng, 3000, 9000),
       timestamp: new Date(Date.now() - (5 * 60_000 - cumulativeOffsetMs)),
     });
@@ -70,6 +71,7 @@ function generateHiddenShortageScenario({ targetProviderId, rng }) {
 
 /**
  * Scenario B — High Velocity / Unusual Activity.
+ * Induces heavy physical cash drain via tightly-clustered amounts.
  */
 function generateHighVelocityScenario({ targetProviderId, rng }) {
   const transactionCount = 6;
@@ -81,9 +83,33 @@ function generateHighVelocityScenario({ targetProviderId, rng }) {
     cumulativeOffsetMs += randomAmountBetween(rng, 60_000, 150_000); 
     transactions.push({
       providerId: targetProviderId,
-      type: 'CASH_OUT',
+      type: 'CASH_OUT', // CASH_OUT depletes physical cash drawer
       amount: Math.round(clusterBaseAmount * (0.96 + rng() * 0.08)),
       timestamp: new Date(Date.now() - (12 * 60_000 - cumulativeOffsetMs)),
+    });
+  }
+
+  return transactions;
+}
+
+/**
+ * Scenario C — Cross-provider or Data Inconsistency.
+ * Simulates systemic issues with missing, late, or conflicting network data feeds.
+ */
+function generateDataInconsistencyScenario({ targetProviderId, rng }) {
+  const transactionCount = 3;
+  const transactions = [];
+  let cumulativeOffsetMs = 0;
+
+  for (let i = 0; i < transactionCount; i += 1) {
+    cumulativeOffsetMs += randomAmountBetween(rng, 30_000, 90_000); 
+    transactions.push({
+      providerId: targetProviderId,
+      type: rng() > 0.5 ? 'CASH_IN' : 'CASH_OUT',
+      amount: randomAmountBetween(rng, 1000, 5000),
+      isLate: i === 0,          // Simulate out-of-order latency sync
+      isConflicting: i === 1,   // Simulate ledger mismatch anomalies
+      timestamp: new Date(Date.now() - (10 * 60_000 - cumulativeOffsetMs)),
     });
   }
 
@@ -93,6 +119,7 @@ function generateHighVelocityScenario({ targetProviderId, rng }) {
 const SCENARIO_GENERATORS = {
   HIDDEN_SHORTAGE: generateHiddenShortageScenario,
   HIGH_VELOCITY: generateHighVelocityScenario,
+  DATA_INCONSISTENCY: generateDataInconsistencyScenario,
 };
 
 /**
@@ -122,6 +149,13 @@ function applyBalanceEffect(current, txn) {
  * Runs a named scenario against a specific agent: generates transactions,
  * writes them, and updates Agent.physicalCash + the affected
  * ProviderBalance rows inside one Prisma transaction.
+ * 
+ * @param {Object} params
+ * @param {SupportedScenarioType} params.scenarioType
+ * @param {string} params.agentId
+ * @param {string} params.targetProviderId
+ * @param {number} [params.seed]
+ * @returns {Promise<SimulationResult>}
  */
 export async function runSimulationScenario({
   scenarioType,
@@ -228,16 +262,23 @@ export function listAvailableScenarios() {
       id: 'HIDDEN_SHORTAGE',
       label: 'Hidden Provider Shortage',
       description:
-        'Injects a burst of cash-out transactions against one provider, ' +
-        'draining that provider\'s balance while total agent liquidity ' +
-        'still appears healthy.',
+        'Injects a burst of cash-in transactions against one provider, ' +
+        'draining that provider\'s electronic balance while total agent ' +
+        'physical cash reserves remain healthy.',
     },
     {
       id: 'HIGH_VELOCITY',
       label: 'Liquidity Pressure + Unusual Activity',
       description:
         'Injects a tight cluster of near-identical cash-out amounts within ' +
-        'a short window, exercising velocity and amount-clustering rules.',
+        'a short window, exercising structural velocity and amount-clustering rules.',
+    },
+    {
+      id: 'DATA_INCONSISTENCY',
+      label: 'Data Integrity Failure',
+      description:
+        'Injects isolated conflicting and delayed transaction feeds to evaluate ' +
+        'system fallback states, rule reconciliation, and safety checks under high uncertainty.',
     },
   ];
 }
