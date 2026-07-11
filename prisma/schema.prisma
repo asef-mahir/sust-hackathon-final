@@ -23,6 +23,9 @@ enum ProviderCode {
 enum TransactionType {
   CASH_IN
   CASH_OUT
+  // Added to support operational cash management scenarios
+  LIQUIDITY_REFILL 
+  PROVIDER_SETTLEMENT
 }
 
 enum ScenarioType {
@@ -85,54 +88,73 @@ model Agent {
 
   manager      Owner?
 
-  balances     ProviderBalance[]
-  transactions Transaction[]
-  alerts       Alert[]
+  balances       ProviderBalance[]
+  transactions   Transaction[]
+  alerts         Alert[]
+  // Fixed casing here
+  simulationRuns SimulationRun[]
 
+  // Indexes for mapping dashboards and risk summaries
   @@index([riskStatus])
   @@index([areaId])
 }
 
 model ProviderBalance {
-  id         String   @id @default(cuid())
-  agentId    String
-  providerId String
-  balance    Decimal  @default(0) @db.Decimal(12, 2)
-  updatedAt  DateTime @updatedAt
+  id               String   @id @default(cuid())
+  agentId          String
+  providerId       String
+  balance          Decimal  @default(0) @db.Decimal(12, 2)
+  // Added threshold to easily flag 'HIDDEN_SHORTAGE' (Scenario A)
+  minimumThreshold Decimal  @default(5000) @db.Decimal(12, 2) 
+  updatedAt        DateTime @updatedAt
 
   agent      Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
   provider   Provider @relation(fields: [providerId], references: [id], onDelete: Restrict)
 
   @@unique([agentId, providerId])
   @@index([providerId])
+  // Index to quickly find balances dipping below safe thresholds
+  @@index([balance]) 
 }
 
 model Transaction {
-  id            String          @id @default(cuid())
-  agentId       String
-  agent         Agent           @relation(fields: [agentId], references: [id], onDelete: Restrict)
-  providerId    String
-  provider      Provider        @relation(fields: [providerId], references: [id], onDelete: Restrict)
-  type          TransactionType
-  amount        Decimal         @db.Decimal(12, 2)
-  isLate        Boolean         @default(false)
-  isConflicting Boolean         @default(false)
-  timestamp     DateTime        @default(now())
+  id                 String          @id @default(cuid())
+  agentId            String
+  agent              Agent           @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  providerId         String
+  provider           Provider        @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  
+  // Added to track velocity from repeated actors (Scenario B)
+  // Must use synthetic data per hackathon rules
+  syntheticAccountId String?         
 
+  type               TransactionType
+  amount             Decimal         @db.Decimal(12, 2)
+  isLate             Boolean         @default(false)
+  isConflicting      Boolean         @default(false)
+  timestamp          DateTime        @default(now())
+
+  // Compound indexes for fast time-window queries and anomaly detection scripts
   @@index([agentId, timestamp])
   @@index([providerId, timestamp])
+  @@index([syntheticAccountId, timestamp])
 }
 
 model Owner {
-  id   String @id 
-  name String
-  role String 
+  // Added default generator
+  id             String  @id @default(cuid()) 
+  name           String
+  role           String 
 
   managedAgentId String? @unique 
   managedAgent   Agent?  @relation(fields: [managedAgentId], references: [id], onDelete: SetNull)
 
-  ownedAlerts Alert[]      @relation("AlertOwner")
-  alertEvents AlertEvent[] @relation("EventActor")
+  simulationRuns SimulationRun[]
+
+  ownedAlerts    Alert[]      @relation("AlertOwner")
+  alertEvents    AlertEvent[] @relation("EventActor")
+
+  @@index([role])
 }
 
 // ---------------------------------------------------------------------------
@@ -147,8 +169,11 @@ model Alert {
   provider         Provider?       @relation(fields: [providerId], references: [id], onDelete: SetNull)
   scenarioType     ScenarioType
   source           AlertSource     @default(RULE_BASED)
+  
+  // JSON stores detailed anomaly evidence, reasoning, and context for explainability 
   evidence         Json            
   explanations     Json?           
+  
   confidence       ConfidenceLevel @default(MEDIUM)
   confidenceReason String?
   status           AlertStatus     @default(PENDING)
@@ -160,9 +185,12 @@ model Alert {
 
   events AlertEvent[]
 
+  // Optimizes dashboard loading: sorting by recent, filtering by status/owner
   @@index([agentId, status])
   @@index([status])
   @@index([scenarioType])
+  @@index([ownerId, status])
+  @@index([createdAt])
 }
 
 model AlertEvent {
@@ -176,6 +204,25 @@ model AlertEvent {
   note       String?
   timestamp  DateTime     @default(now())
 
+  // Fast retrieval of audit trail for a specific alert
   @@index([alertId, timestamp])
   @@index([actorId])
+}
+
+model SimulationRun {
+  id                  String       @id @default(cuid())
+  scenarioType        ScenarioType
+  agentId             String
+  agent               Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  seed                Int?
+  transactionsCreated Int
+  alertsCreated       Int
+  alertsSuppressed    Int
+  durationMs          Int
+  triggeredById       String
+  triggeredBy         Owner        @relation(fields: [triggeredById], references: [id], onDelete: Restrict)
+  createdAt           DateTime     @default(now())
+
+  @@index([agentId, createdAt])
+  @@index([triggeredById])
 }
