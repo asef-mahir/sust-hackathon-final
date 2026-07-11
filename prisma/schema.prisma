@@ -83,6 +83,8 @@ model Agent {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
+  manager      Owner?
+
   balances     ProviderBalance[]
   transactions Transaction[]
   alerts       Alert[]
@@ -125,6 +127,9 @@ model Owner {
   id   String @id 
   name String
   role String 
+
+  managedAgentId String? @unique 
+  managedAgent   Agent?  @relation(fields: [managedAgentId], references: [id], onDelete: SetNull)
 
   ownedAlerts Alert[]      @relation("AlertOwner")
   alertEvents AlertEvent[] @relation("EventActor")

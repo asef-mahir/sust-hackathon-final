@@ -1,282 +1,169 @@
 const { PrismaClient } = require('@prisma/client');
+const { createClient } = require('@supabase/supabase-js');
+const WebSocket = require('ws');
+require('dotenv').config({ path: '.env' }); 
 
 const prisma = new PrismaClient();
 
-const AREAS = [
-  { name: 'Dhaka North', prefix: 'DHN' },
-  { name: 'Dhaka South', prefix: 'DHS' },
-  { name: 'Chattogram', prefix: 'CTG' },
-  { name: 'Sylhet', prefix: 'SYL' },
-  { name: 'Khulna', prefix: 'KHL' },
-  { name: 'Rajshahi', prefix: 'RAJ' },
-];
-
-const PROVIDERS = [
-  { code: 'BKASH', name: 'bKash' },
-  { code: 'NAGAD', name: 'Nagad' },
-  { code: 'ROCKET', name: 'Rocket' },
-];
-
-const OWNERS = [
-  { id: 'owner_rahim', name: 'Abdur Rahim', role: 'RISK_ANALYST' },
-  { id: 'owner_nusrat', name: 'Nusrat Jahan', role: 'RISK_ANALYST' },
-  { id: 'owner_karim', name: 'Karim Uddin', role: 'OPS_MANAGER' },
-  { id: 'owner_admin', name: 'System Admin', role: 'ADMIN' },
-];
-
-const AGENT_NAMES = [
-  'Rahman Mobile Banking', 'City Corner Store', 'Green Valley Enterprise',
-  'Al-Amin Telecom', 'Sultana Variety Store', 'Faruk Electronics',
-  'Nabila Fashion House', 'Bismillah Store', 'Hasan Traders',
-  'Momtaz General Store', 'Karim Mobile Recharge', 'Jamuna Enterprise',
-  'Padma Store', 'Meghna Trading', 'Sonar Bangla Shop',
-  'Amin Bazar Store', 'Chayanir Enterprise', 'Utshob Store',
-];
-
-const SCENARIO_EVIDENCE = {
-  HIDDEN_SHORTAGE: () => {
-    const declaredBalance = randomInt(50_000, 400_000);
-    const shortagePercent = randomInt(15, 60);
-    const actualBalance = Math.round(declaredBalance * (1 - shortagePercent / 100));
-    return {
-      declaredBalance,
-      actualBalance,
-      shortageAmount: declaredBalance - actualBalance,
-      shortagePercent,
-    };
-  },
-  HIGH_VELOCITY: () => ({
-    transactionCount: randomInt(25, 80),
-    windowMinutes: randomInt(10, 45),
-    totalAmount: randomInt(200_000, 1_200_000),
-    averageAgentVelocity: randomInt(3, 8),
-  }),
-  DATA_INCONSISTENCY: () => {
-    const reportedBalance = randomInt(30_000, 350_000);
-    const discrepancy = randomInt(5_000, 60_000);
-    return {
-      reportedBalance,
-      calculatedBalance: reportedBalance - discrepancy,
-      discrepancy,
-      lastSyncAt: randomDate(3).toISOString(),
-    };
-  },
-  COORDINATED_CLOSURE: () => ({
-    nearbyAgentIds: [],
-    closureWindowMinutes: randomInt(5, 30),
-    radiusKm: randomFloat(0.5, 3, 1),
-  }),
-};
-
-const CONFIDENCE_LEVELS = ['HIGH', 'MEDIUM', 'LOW'];
-const ALERT_STATUSES = ['PENDING', 'ACKNOWLEDGED', 'IN_PROGRESS', 'RESOLVED', 'DISMISSED'];
-
-function randomInt(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function randomFloat(min, max, decimals = 2) {
-  return Number((Math.random() * (max - min) + min).toFixed(decimals));
-}
-
-function randomItem(arr) {
-  return arr[randomInt(0, arr.length - 1)];
-}
-
-function randomDate(daysAgo) {
-  const now = Date.now();
-  const past = now - randomInt(0, daysAgo * 24 * 60 * 60 * 1000);
-  return new Date(past);
-}
-
-function weightedRiskStatus() {
-  const roll = Math.random();
-  if (roll < 0.7) return 'SAFE';
-  if (roll < 0.9) return 'WARNING';
-  return 'CRITICAL';
-}
-
-async function clearData() {
-  await prisma.alertEvent.deleteMany();
-  await prisma.alert.deleteMany();
-  await prisma.transaction.deleteMany();
-  await prisma.providerBalance.deleteMany();
-  await prisma.agent.deleteMany();
-  await prisma.owner.deleteMany();
-  await prisma.provider.deleteMany();
-  await prisma.area.deleteMany();
-}
-
-async function seedOwners() {
-  await prisma.owner.createMany({ data: OWNERS });
-  return OWNERS;
-}
-
-async function seedAreas() {
-  const areas = [];
-  for (const area of AREAS) {
-    const created = await prisma.area.create({ data: { name: area.name } });
-    areas.push({ ...created, prefix: area.prefix });
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  { 
+    auth: { autoRefreshToken: false, persistSession: false },
+    realtime: { transport: WebSocket } 
   }
-  return areas;
-}
+);
 
-async function seedProviders() {
-  const providers = [];
-  for (const provider of PROVIDERS) {
-    const created = await prisma.provider.create({ data: provider });
-    providers.push(created);
-  }
-  return providers;
-}
+async function createAuthUser(email, password, name) {
+  console.log(`Creating/Fetching Supabase Auth user: ${email}...`);
+  const { data, error } = await supabase.auth.admin.createUser({
+    email: email,
+    password: password,
+    email_confirm: true, 
+    user_metadata: { name: name }
+  });
 
-async function seedAgents(areas) {
-  const agents = [];
-  let nameIndex = 0;
-  for (const area of areas) {
-    for (let i = 1; i <= 3; i++) {
-      const outletCode = `${area.prefix}-${String(i).padStart(4, '0')}`;
-      const agent = await prisma.agent.create({
-        data: {
-          name: AGENT_NAMES[nameIndex % AGENT_NAMES.length],
-          outletCode,
-          areaId: area.id,
-          latitude: randomFloat(20.5, 26.5, 6),
-          longitude: randomFloat(88.0, 92.5, 6),
-          physicalCash: randomInt(10_000, 300_000),
-          riskStatus: weightedRiskStatus(),
-        },
-      });
-      agents.push(agent);
-      nameIndex++;
+  if (error) {
+    if (error.message.includes('already been registered')) {
+      const existingUsers = await supabase.auth.admin.listUsers();
+      const user = existingUsers.data.users.find(u => u.email === email);
+      return user.id;
     }
+    throw error;
   }
-  return agents;
-}
-
-async function seedProviderBalances(agents, providers) {
-  for (const agent of agents) {
-    for (const provider of providers) {
-      await prisma.providerBalance.create({
-        data: {
-          agentId: agent.id,
-          providerId: provider.id,
-          balance: randomInt(5_000, 500_000),
-        },
-      });
-    }
-  }
-}
-
-async function seedTransactions(agents, providers) {
-  for (const agent of agents) {
-    const count = randomInt(15, 40);
-    for (let i = 0; i < count; i++) {
-      const provider = randomItem(providers);
-      await prisma.transaction.create({
-        data: {
-          agentId: agent.id,
-          providerId: provider.id,
-          type: randomItem(['CASH_IN', 'CASH_OUT']),
-          amount: randomInt(500, 50_000),
-          isLate: Math.random() < 0.08,
-          isConflicting: Math.random() < 0.05,
-          timestamp: randomDate(14),
-        },
-      });
-    }
-  }
-}
-
-async function seedAlerts(agents, providers, owners) {
-  const scenarioTypes = Object.keys(SCENARIO_EVIDENCE);
-  const flaggedAgents = agents.filter((a) => a.riskStatus !== 'SAFE');
-
-  for (const agent of flaggedAgents) {
-    const alertCount = agent.riskStatus === 'CRITICAL' ? randomInt(2, 3) : 1;
-    for (let i = 0; i < alertCount; i++) {
-      const scenarioType = randomItem(scenarioTypes);
-      const status = randomItem(ALERT_STATUSES);
-      const isAssigned = status !== 'PENDING';
-      const owner = isAssigned ? randomItem(owners) : null;
-      const createdAt = randomDate(10);
-
-      const alert = await prisma.alert.create({
-        data: {
-          agentId: agent.id,
-          providerId: Math.random() < 0.8 ? randomItem(providers).id : null,
-          scenarioType,
-          source: Math.random() < 0.6 ? 'RULE_BASED' : 'HYBRID',
-          evidence: SCENARIO_EVIDENCE[scenarioType](),
-          explanations:
-            Math.random() < 0.5
-              ? {
-                  summary: `Pattern consistent with ${scenarioType.toLowerCase().replace('_', ' ')} for outlet ${agent.outletCode}.`,
-                  riskFactors: ['balance_variance', 'transaction_timing'],
-                }
-              : null,
-          confidence: randomItem(CONFIDENCE_LEVELS),
-          confidenceReason: Math.random() < 0.5 ? 'Derived from historical variance model.' : null,
-          status,
-          ownerId: owner ? owner.id : null,
-          assignedAt: owner ? createdAt : null,
-          createdAt,
-          resolvedAt: status === 'RESOLVED' || status === 'DISMISSED' ? randomDate(3) : null,
-        },
-      });
-
-      if (isAssigned) {
-        await prisma.alertEvent.create({
-          data: {
-            alertId: alert.id,
-            fromStatus: 'PENDING',
-            toStatus: 'ACKNOWLEDGED',
-            actorId: owner.id,
-            note: 'Acknowledged, reviewing field data.',
-            timestamp: createdAt,
-          },
-        });
-
-        if (status === 'IN_PROGRESS' || status === 'RESOLVED' || status === 'DISMISSED') {
-          await prisma.alertEvent.create({
-            data: {
-              alertId: alert.id,
-              fromStatus: 'ACKNOWLEDGED',
-              toStatus: status,
-              actorId: owner.id,
-              note:
-                status === 'RESOLVED'
-                  ? 'Confirmed with agent, discrepancy resolved.'
-                  : status === 'DISMISSED'
-                  ? 'False positive, no action needed.'
-                  : 'Field visit scheduled.',
-              timestamp: randomDate(5),
-            },
-          });
-        }
-      }
-    }
-  }
+  return data.user.id;
 }
 
 async function main() {
-  await clearData();
+  console.log('🧹 Cleaning existing Prisma database records...');
+  await prisma.alertEvent.deleteMany({});
+  await prisma.alert.deleteMany({});
+  await prisma.transaction.deleteMany({});
+  await prisma.providerBalance.deleteMany({});
+  
+  // Notice we delete Owner BEFORE Agent because Owner now depends on Agent
+  await prisma.owner.deleteMany({});
+  await prisma.agent.deleteMany({});
+  
+  await prisma.provider.deleteMany({});
+  await prisma.area.deleteMany({});
 
-  const owners = await seedOwners();
-  const areas = await seedAreas();
-  const providers = await seedProviders();
-  const agents = await seedAgents(areas);
+  console.log('🔐 Generating Supabase Auth Credentials...');
+  const opsId = await createAuthUser('ops@finstream.com', 'demo12345', 'Rahat Ahmed');
+  const riskId = await createAuthUser('risk@finstream.com', 'demo12345', 'Nadia Chowdhury');
+  const agentId = await createAuthUser('agent@finstream.com', 'demo12345', 'Sohrab Hossain');
 
-  await seedProviderBalances(agents, providers);
-  await seedTransactions(agents, providers);
-  await seedAlerts(agents, providers, owners);
+  console.log('🌱 Seeding Reference Areas...');
+  const zindabazar = await prisma.area.create({ data: { name: 'Sylhet_Zindabazar' } });
+  const bandarbazar = await prisma.area.create({ data: { name: 'Sylhet_Bandarbazar' } });
+  const subidbazar = await prisma.area.create({ data: { name: 'Sylhet_Subidbazar' } });
 
-  console.log(`Seeded ${areas.length} areas, ${providers.length} providers, ${agents.length} agents, ${owners.length} owners.`);
+  console.log('🌱 Seeding MFS Providers...');
+  const bkash = await prisma.provider.create({ data: { code: 'BKASH', name: 'bKash Limited' } });
+  const nagad = await prisma.provider.create({ data: { code: 'NAGAD', name: 'Nagad MFS' } });
+  const rocket = await prisma.provider.create({ data: { code: 'ROCKET', name: 'DBBL Rocket' } });
+
+  console.log('🌱 Seeding Agent Network...');
+  const agentNormal = await prisma.agent.create({
+    data: {
+      name: 'Zindabazar Digital Telecom',
+      outletCode: 'OUTLET-77102',
+      areaId: zindabazar.id,
+      physicalCash: 150000.00,
+    },
+  });
+
+  // This is the target agent for our demo scenarios
+  const agentVulnerable = await prisma.agent.create({
+    data: {
+      name: 'Mizan MFS Point',
+      outletCode: 'OUTLET-102',
+      areaId: zindabazar.id,
+      physicalCash: 120000.00, 
+    },
+  });
+
+  const agentBusy = await prisma.agent.create({
+    data: {
+      name: 'Bandarbazar Enterprise',
+      outletCode: 'OUTLET-99213',
+      areaId: bandarbazar.id,
+      physicalCash: 250000.00, 
+    },
+  });
+
+  const agentLowCash = await prisma.agent.create({
+    data: {
+      name: 'Chowdhury Traders',
+      outletCode: 'OUTLET-44811',
+      areaId: subidbazar.id,
+      physicalCash: 15000.00, // Very low physical cash
+    },
+  });
+
+  console.log('🌱 Mapping Auth Users to Prisma Owners...');
+  await prisma.owner.createMany({
+    data: [
+      { id: opsId, name: 'Rahat Ahmed (Ops)', role: 'OPS' },
+      { id: riskId, name: 'Nadia Chowdhury (Risk)', role: 'RISK' },
+      // Linking Sohrab's account directly to the physical shop for the dashboard view
+      { id: agentId, name: 'Sohrab Hossain (Agent)', role: 'AGENT', managedAgentId: agentVulnerable.id }, 
+    ],
+  });
+
+  console.log('🌱 Instantiating Provider E-Money Balances...');
+  await prisma.providerBalance.createMany({
+    data: [
+      // Normal Agent
+      { agentId: agentNormal.id, providerId: bkash.id, balance: 50000.00 },
+      { agentId: agentNormal.id, providerId: nagad.id, balance: 60000.00 },
+      { agentId: agentNormal.id, providerId: rocket.id, balance: 40000.00 },
+      
+      // Vulnerable Agent (Prepped for Hidden Shortage demo)
+      { agentId: agentVulnerable.id, providerId: bkash.id, balance: 8000.00 }, 
+      { agentId: agentVulnerable.id, providerId: nagad.id, balance: 80000.00 },  
+      { agentId: agentVulnerable.id, providerId: rocket.id, balance: 60000.00 }, 
+      
+      // Busy Agent
+      { agentId: agentBusy.id, providerId: bkash.id, balance: 150000.00 }, 
+      { agentId: agentBusy.id, providerId: nagad.id, balance: 120000.00 },  
+      { agentId: agentBusy.id, providerId: rocket.id, balance: 90000.00 }, 
+
+      // Low Cash Agent
+      { agentId: agentLowCash.id, providerId: bkash.id, balance: 75000.00 }, 
+      { agentId: agentLowCash.id, providerId: nagad.id, balance: 85000.00 },  
+      { agentId: agentLowCash.id, providerId: rocket.id, balance: 40000.00 }, 
+    ],
+  });
+
+  console.log('🌱 Generating Baseline Transactions...');
+  const now = new Date();
+  const txData = [
+    { agentId: agentNormal.id, providerId: bkash.id, type: 'CASH_IN', amount: 5000.00, timestamp: new Date(now.getTime() - 45 * 60000) },
+    { agentId: agentNormal.id, providerId: nagad.id, type: 'CASH_OUT', amount: 2500.00, timestamp: new Date(now.getTime() - 30 * 60000) },
+    { agentId: agentVulnerable.id, providerId: bkash.id, type: 'CASH_OUT', amount: 1500.00, timestamp: new Date(now.getTime() - 25 * 60000) },
+    { agentId: agentVulnerable.id, providerId: rocket.id, type: 'CASH_IN', amount: 10000.00, timestamp: new Date(now.getTime() - 20 * 60000) },
+    { agentId: agentBusy.id, providerId: nagad.id, type: 'CASH_OUT', amount: 8000.00, timestamp: new Date(now.getTime() - 15 * 60000) },
+    { agentId: agentBusy.id, providerId: bkash.id, type: 'CASH_OUT', amount: 12000.00, timestamp: new Date(now.getTime() - 10 * 60000) },
+    { agentId: agentLowCash.id, providerId: rocket.id, type: 'CASH_IN', amount: 2000.00, timestamp: new Date(now.getTime() - 5 * 60000) },
+    { agentId: agentVulnerable.id, providerId: nagad.id, type: 'CASH_IN', amount: 4500.00, timestamp: new Date(now.getTime() - 2 * 60000) },
+  ];
+
+  await prisma.transaction.createMany({ data: txData });
+
+  console.log(`
+  ✨ Database & Auth Successfully Seeded! ✨
+  --------------------------------------------------
+  Agents     : 4 Active Shops (Zindabazar, Bandarbazar, Subidbazar)
+  History    : 8 Recent Transactions logged
+  Auth Ready : 3 Accounts provisioned
+  --------------------------------------------------
+  `);
 }
 
 main()
   .catch((e) => {
-    console.error(e);
+    console.error('❌ Error executing seed script:', e);
     process.exit(1);
   })
   .finally(async () => {

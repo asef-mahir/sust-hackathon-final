@@ -1,0 +1,188 @@
+import OpenAI from 'openai';
+import { z } from 'zod';
+
+const OPENAI_TIMEOUT_MS = 6000;
+const OPENAI_MODEL = 'gpt-4o-mini';
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+/**
+ * @typedef {Object} AdvisoryFinding
+ * @property {'HIDDEN_SHORTAGE' | 'HIGH_VELOCITY'} scenarioType
+ * @property {string} providerCode - e.g. 'BKASH', 'NAGAD', 'ROCKET'
+ * @property {'HIGH' | 'MEDIUM' | 'LOW'} confidence - rule-engine confidence
+ * @property {string} confidenceReason - rule-engine's own explanation string
+ * @property {Object} evidence - the structured evidence object from anomalyRules.js
+ */
+
+/**
+ * @typedef {Object} LocalizedAdvisory
+ * @property {string} reason
+ * @property {string} evidence
+ * @property {string} nextStep
+ */
+
+/**
+ * @typedef {Object} AdvisoryResult
+ * @property {'AI' | 'FALLBACK'} source
+ * @property {{ en: LocalizedAdvisory, bn: LocalizedAdvisory, banglish: LocalizedAdvisory }} explanations
+ * @property {ConfidenceLevelOrNull} aiConfidence - informational only
+ * @property {string} [errorReason] - present only when source === 'FALLBACK'
+ */
+
+/** @typedef {'HIGH' | 'MEDIUM' | 'LOW' | null} ConfidenceLevelOrNull */
+
+/**
+ * Zod schema the raw OpenAI JSON response must satisfy before we trust it.
+ */
+const localizedAdvisorySchema = z.object({
+  reason: z.string().min(1),
+  evidence: z.string().min(1),
+  nextStep: z.string().min(1),
+});
+
+const advisoryResponseSchema = z.object({
+  en: localizedAdvisorySchema,
+  bn: localizedAdvisorySchema,
+  banglish: localizedAdvisorySchema,
+  confidence: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
+});
+
+/**
+ * Builds the system + user prompt pair for a given finding.
+ *
+ * @param {AdvisoryFinding} finding
+ * @returns {{ system: string, user: string }}
+ */
+function buildAdvisoryPrompt(finding) {
+  const system = [
+    'You are a decision-support assistant for mobile financial service operations staff.',
+    'You explain liquidity and anomaly signals that a deterministic rule engine has already detected.',
+    'You NEVER decide or imply fraud. Never use words like "fraudulent", "fraud", "guilty", or name a person/agent as responsible for wrongdoing.',
+    'Never suggest moving or converting funds between different providers (e.g. never suggest moving bKash balance to cover a Rocket shortage) — providers are separate systems.',
+    'Use careful, uncertain language such as "may indicate" or "requires review" rather than definitive claims.',
+    'Respond with strict JSON only, matching this exact shape, no markdown, no commentary outside the JSON:',
+    '{"en":{"reason":"","evidence":"","nextStep":""},"bn":{"reason":"","evidence":"","nextStep":""},"banglish":{"reason":"","evidence":"","nextStep":""},"confidence":"HIGH|MEDIUM|LOW"}',
+    'Each "reason" explains what pattern was found, in plain language, under 40 words.',
+    'Each "evidence" summarizes the specific numbers/facts backing it, under 40 words.',
+    'Each "nextStep" is a safe, advisory-only recommendation (e.g. "flag for operations review", "confirm with agent"), under 25 words, never an automated action.',
+    '"bn" must be written in Bengali script. "banglish" must be Bengali written in Latin script (transliterated), not English translation.',
+  ].join(' ');
+
+  const user = JSON.stringify({
+    scenarioType: finding.scenarioType,
+    providerCode: finding.providerCode,
+    ruleEngineConfidence: finding.confidence,
+    ruleEngineConfidenceReason: finding.confidenceReason,
+    evidence: finding.evidence,
+  });
+
+  return { system, user };
+}
+
+/**
+ * Deterministic local fallback — no network call, no randomness.
+ * Guarantees the alert always has a usable explanation.
+ *
+ * @param {AdvisoryFinding} finding
+ * @returns {{ en: LocalizedAdvisory, bn: LocalizedAdvisory, banglish: LocalizedAdvisory }}
+ */
+function buildFallbackAdvisory(finding) {
+  const scenarioLabelEn =
+    finding.scenarioType === 'HIDDEN_SHORTAGE'
+      ? 'a possible hidden liquidity shortage'
+      : 'unusually clustered high-velocity transactions';
+
+  const reasonEn = `Rule-based alert: ${scenarioLabelEn} detected for ${finding.providerCode}. ${finding.confidenceReason}`;
+  const evidenceEn = `See attached evidence for exact figures and thresholds breached.`;
+  const nextStepEn = `Flag for operations review; confirm current balance directly with the agent before taking action.`;
+
+  return {
+    en: { reason: reasonEn, evidence: evidenceEn, nextStep: nextStepEn },
+    bn: {
+      reason: `নিয়মভিত্তিক সতর্কতা: ${finding.providerCode}-এর জন্য সম্ভাব্য অস্বাভাবিক কার্যকলাপ শনাক্ত হয়েছে।`,
+      evidence: `সঠিক পরিসংখ্যানের জন্য সংযুক্ত প্রমাণ দেখুন।`,
+      nextStep: `পর্যালোচনার জন্য অপারেশন টিমকে জানান; পদক্ষেপ নেওয়ার আগে এজেন্টের সাথে সরাসরি ব্যালেন্স যাচাই করুন।`,
+    },
+    banglish: {
+      reason: `Rule-based alert: ${finding.providerCode} er jonno oshabhabik kar-kolap shonakto hoyeche.`,
+      evidence: `Shothik hisheb-er jonno shongzukto evidence dekhun.`,
+      nextStep: `Operations team ke review-er jonno janan; kaj korar age agent-er shathe direct balance jachai korun.`,
+    },
+  };
+}
+
+/**
+ * Races the OpenAI call against a timeout
+ */
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`OpenAI call exceeded ${ms}ms timeout`)), ms)
+    ),
+  ]);
+}
+
+/**
+ * Generates a bilingual/trilingual advisory explanation for a rule-engine finding.
+ *
+ * @param {AdvisoryFinding} finding
+ * @returns {Promise<AdvisoryResult>}
+ */
+export async function generateAlertAdvisory(finding) {
+  if (!process.env.OPENAI_API_KEY) {
+    return {
+      source: 'FALLBACK',
+      explanations: buildFallbackAdvisory(finding),
+      aiConfidence: null,
+      errorReason: 'OPENAI_API_KEY not configured',
+    };
+  }
+
+  const { system, user } = buildAdvisoryPrompt(finding);
+
+  try {
+    const completion = await withTimeout(
+      openai.chat.completions.create({
+        model: OPENAI_MODEL,
+        response_format: { type: 'json_object' },
+        temperature: 0.3,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+      }),
+      OPENAI_TIMEOUT_MS
+    );
+
+    const rawContent = completion.choices?.[0]?.message?.content;
+    if (!rawContent) {
+      throw new Error('OpenAI response contained no message content');
+    }
+
+    const parsedJson = JSON.parse(rawContent);
+    const validated = advisoryResponseSchema.parse(parsedJson);
+
+    return {
+      source: 'AI',
+      explanations: {
+        en: validated.en,
+        bn: validated.bn,
+        banglish: validated.banglish,
+      },
+      aiConfidence: validated.confidence ?? null,
+    };
+  } catch (error) {
+    return {
+      source: 'FALLBACK',
+      explanations: buildFallbackAdvisory(finding),
+      aiConfidence: null,
+      errorReason: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+export { buildAdvisoryPrompt, buildFallbackAdvisory };
