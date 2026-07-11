@@ -51,7 +51,7 @@ export function SimulationHistoryTable({ initialRuns, initialNextCursor }) {
 
   if (runs.length === 0) {
     return (
-      <p className="py-6 text-center text-sm text-white/40">
+      <p className="py-6 text-center text-sm text-slate-500">
         No simulations run yet — use the scenario cards above.
       </p>
     );
@@ -61,7 +61,7 @@ export function SimulationHistoryTable({ initialRuns, initialNextCursor }) {
     <div className="flex flex-col gap-2">
       <table className="w-full text-left text-sm">
         <thead>
-          <tr className="border-b border-white/10 text-xs uppercase tracking-wide text-white/40">
+          <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
             <th className="py-2 font-medium">Scenario</th>
             <th className="py-2 font-medium">Agent</th>
             <th className="py-2 font-medium">Triggered By</th>
@@ -71,7 +71,7 @@ export function SimulationHistoryTable({ initialRuns, initialNextCursor }) {
         </thead>
         <tbody>
           {runs.map((run) => (
-            <tr key={run.id} className="border-b border-white/5 text-white/70">
+            <tr key={run.id} className="border-b border-slate-100 text-slate-700">
               <td className="py-2">{SCENARIO_LABELS[run.scenarioType] ?? run.scenarioType}</td>
               <td className="py-2">{run.agent?.outletCode}</td>
               <td className="py-2">{run.triggeredBy?.name}</td>
@@ -91,7 +91,7 @@ export function SimulationHistoryTable({ initialRuns, initialNextCursor }) {
           size="sm"
           onClick={handleLoadMore}
           disabled={isLoadingMore}
-          className="mt-2 self-center border-white/10 text-white/60"
+          className="mt-2 self-center border-slate-200 text-slate-600"
         >
           {isLoadingMore ? (
             <>

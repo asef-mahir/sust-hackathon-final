@@ -8,11 +8,11 @@
 
 export function EmptyState({ title, description, icon }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-white/10 bg-white/[0.02] px-6 py-10 text-center">
-      {icon ? <div className="text-white/20">{icon}</div> : null}
-      <p className="text-sm font-medium text-white/70">{title}</p>
+    <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-6 py-10 text-center">
+      {icon ? <div className="text-slate-400">{icon}</div> : null}
+      <p className="text-sm font-medium text-slate-700">{title}</p>
       {description ? (
-        <p className="max-w-sm text-xs text-white/40">{description}</p>
+        <p className="max-w-sm text-xs text-slate-500">{description}</p>
       ) : null}
     </div>
   );

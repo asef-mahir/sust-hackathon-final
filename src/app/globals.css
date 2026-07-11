@@ -4,6 +4,10 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@utility ls-numeric {
+  font-variant-numeric: tabular-nums;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -46,6 +50,18 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* App-specific semantic tokens (light theme) — status colors, elevated
+     surface, and per-provider brand accents used across dashboard/alert/
+     simulation components. */
+  --color-critical: var(--critical);
+  --color-healthy: var(--healthy);
+  --color-brass: var(--brass);
+  --color-ink: var(--ink);
+  --color-surface: var(--surface);
+  --color-provider-a: var(--provider-a);
+  --color-provider-b: var(--provider-b);
+  --color-provider-c: var(--provider-c);
 }
 
 :root {
@@ -81,6 +97,19 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Status colors: red/amber/green, used consistently for risk + alert state. */
+  --critical: #dc2626;
+  --healthy: #059669;
+  --brass: #d97706;
+  /* Text drawn on top of a --brass-colored background (buttons, active nav). */
+  --ink: #1c1917;
+  /* Elevated card surface, distinct from the page background (slate-50). */
+  --surface: #ffffff;
+  /* Per-provider brand accents: bKash / Nagad / Rocket. */
+  --provider-a: #e2136e;
+  --provider-b: #ea7317;
+  --provider-c: #7c3aed;
 }
 
 .dark {

@@ -37,11 +37,11 @@ export function TargetSelector({
   return (
     <div className="flex flex-wrap items-end gap-3">
       <div className="flex flex-col gap-1">
-        <label className="text-xs text-white/50" htmlFor="agent-select">
+        <label className="text-xs text-slate-500" htmlFor="agent-select">
           Target Agent
         </label>
         <Select value={selectedAgentId} onValueChange={onAgentChange}>
-          <SelectTrigger id="agent-select" className="w-56 border-white/10 bg-surface">
+          <SelectTrigger id="agent-select" className="w-56 border-slate-200 bg-surface">
             <SelectValue placeholder="Select an agent" />
           </SelectTrigger>
           <SelectContent>
@@ -55,11 +55,11 @@ export function TargetSelector({
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs text-white/50" htmlFor="provider-select">
+        <label className="text-xs text-slate-500" htmlFor="provider-select">
           Target Provider
         </label>
         <Select value={selectedProviderId} onValueChange={onProviderChange}>
-          <SelectTrigger id="provider-select" className="w-40 border-white/10 bg-surface">
+          <SelectTrigger id="provider-select" className="w-40 border-slate-200 bg-surface">
             <SelectValue placeholder="Select a provider" />
           </SelectTrigger>
           <SelectContent>

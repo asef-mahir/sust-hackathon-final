@@ -11,9 +11,9 @@ import { EmptyState } from '@/components/shared/EmptyState';
  */
 export function AreaComparisonTable({ areas }) {
   return (
-    <Card className="bg-surface border-white/10">
+    <Card className="bg-surface border-slate-200">
       <CardHeader>
-        <CardTitle className="text-sm font-medium text-white/80">Area Comparison</CardTitle>
+        <CardTitle className="text-sm font-medium text-slate-800">Area Comparison</CardTitle>
       </CardHeader>
       <CardContent>
         {areas.length === 0 ? (
@@ -21,7 +21,7 @@ export function AreaComparisonTable({ areas }) {
         ) : (
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-white/10 text-xs uppercase tracking-wide text-white/40">
+              <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                 <th className="py-2 font-medium">Area</th>
                 <th className="py-2 font-medium">Agents</th>
                 <th className="py-2 font-medium">Total Liquidity</th>
@@ -30,7 +30,7 @@ export function AreaComparisonTable({ areas }) {
             </thead>
             <tbody>
               {areas.map((area) => (
-                <tr key={area.areaId} className="border-b border-white/5 text-white/70">
+                <tr key={area.areaId} className="border-b border-slate-100 text-slate-700">
                   <td className="py-2">{area.areaName}</td>
                   <td className="ls-numeric py-2">{area.agentCount}</td>
                   <td className="ls-numeric py-2">

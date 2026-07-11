@@ -32,10 +32,10 @@ export function CurrentAlertsList({ alerts }) {
         <Link
           key={alert.id}
           href={`/alerts/${alert.id}`}
-          className="flex items-center justify-between rounded-md border border-white/5 bg-white/[0.02] px-3 py-2 hover:bg-white/[0.05]"
+          className="flex items-center justify-between rounded-md border border-slate-100 bg-slate-50 px-3 py-2 hover:bg-slate-100"
         >
           <div className="flex items-center gap-2">
-            <span className="text-sm text-white/80">
+            <span className="text-sm text-slate-800">
               {SCENARIO_LABELS[alert.scenarioType] ?? alert.scenarioType}
             </span>
             <StatusPill status={alert.status} />

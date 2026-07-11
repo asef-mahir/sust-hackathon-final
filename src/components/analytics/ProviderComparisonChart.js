@@ -22,9 +22,9 @@ export function ProviderComparisonChart({ providerBalances }) {
   }));
 
   return (
-    <Card className="bg-surface border-white/10">
+    <Card className="bg-surface border-slate-200">
       <CardHeader>
-        <CardTitle className="text-sm font-medium text-white/80">
+        <CardTitle className="text-sm font-medium text-slate-800">
           Provider Comparison
         </CardTitle>
       </CardHeader>

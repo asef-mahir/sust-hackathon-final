@@ -32,17 +32,17 @@ export function EvidencePanel({ evidence, confidenceReason }) {
   const entries = Object.entries(evidence ?? {});
 
   return (
-    <Card className="bg-surface border-white/10">
+    <Card className="bg-surface border-slate-200">
       <CardHeader>
-        <CardTitle className="text-sm font-medium text-white/80">Evidence</CardTitle>
+        <CardTitle className="text-sm font-medium text-slate-800">Evidence</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        <p className="text-sm text-white/70">{confidenceReason}</p>
+        <p className="text-sm text-slate-700">{confidenceReason}</p>
         <div className="ls-numeric grid grid-cols-1 gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
           {entries.map(([key, value]) => (
-            <div key={key} className="flex justify-between border-b border-white/5 py-1">
-              <span className="text-white/40">{humanizeKey(key)}</span>
-              <span className="text-white/80">{formatValue(value)}</span>
+            <div key={key} className="flex justify-between border-b border-slate-100 py-1">
+              <span className="text-slate-500">{humanizeKey(key)}</span>
+              <span className="text-slate-800">{formatValue(value)}</span>
             </div>
           ))}
         </div>

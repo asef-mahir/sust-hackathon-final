@@ -47,9 +47,9 @@ export default async function AnalyticsPage() {
 
 function PageHeader() {
   return (
-    <header className="border-b border-white/10 pb-4">
-      <h1 className="text-lg font-semibold text-white">Analytics</h1>
-      <p className="text-xs text-white/40">Network-wide comparison and trends</p>
+    <header className="border-b border-slate-200 pb-4">
+      <h1 className="text-lg font-semibold text-slate-900">Analytics</h1>
+      <p className="text-xs text-slate-500">Network-wide comparison and trends</p>
     </header>
   );
 }

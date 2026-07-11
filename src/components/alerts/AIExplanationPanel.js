@@ -38,9 +38,9 @@ export function AIExplanationPanel({ explanations, source }) {
 
   if (!explanations) {
     return (
-      <Card className="bg-surface border-white/10">
+      <Card className="bg-surface border-slate-200">
         <CardHeader>
-          <CardTitle className="text-sm font-medium text-white/80">
+          <CardTitle className="text-sm font-medium text-slate-800">
             AI Explanation
           </CardTitle>
         </CardHeader>
@@ -54,9 +54,9 @@ export function AIExplanationPanel({ explanations, source }) {
   const content = explanations[activeLanguage];
 
   return (
-    <Card className="bg-surface border-white/10">
+    <Card className="bg-surface border-slate-200">
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-sm font-medium text-white/80">
+        <CardTitle className="text-sm font-medium text-slate-800">
           AI Explanation
         </CardTitle>
         <Badge
@@ -64,7 +64,7 @@ export function AIExplanationPanel({ explanations, source }) {
           className={
             source === 'HYBRID'
               ? 'border-healthy/30 text-healthy'
-              : 'border-white/20 text-white/50'
+              : 'border-slate-300 text-slate-500'
           }
         >
           <Sparkles className="mr-1 h-3 w-3" />
@@ -80,7 +80,7 @@ export function AIExplanationPanel({ explanations, source }) {
               className={`rounded-md px-2 py-1 text-xs transition-colors ${
                 activeLanguage === lang.code
                   ? 'bg-brass/15 text-brass'
-                  : 'text-white/40 hover:text-white/70'
+                  : 'text-slate-500 hover:text-slate-700'
               }`}
             >
               {lang.label}
@@ -90,18 +90,18 @@ export function AIExplanationPanel({ explanations, source }) {
 
         <div className="flex flex-col gap-2 text-sm">
           <div>
-            <p className="text-xs uppercase tracking-wide text-white/40">Reason</p>
-            <p className="text-white/80">{content?.reason}</p>
+            <p className="text-xs uppercase tracking-wide text-slate-500">Reason</p>
+            <p className="text-slate-800">{content?.reason}</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-wide text-white/40">Evidence</p>
-            <p className="text-white/80">{content?.evidence}</p>
+            <p className="text-xs uppercase tracking-wide text-slate-500">Evidence</p>
+            <p className="text-slate-800">{content?.evidence}</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-wide text-white/40">
+            <p className="text-xs uppercase tracking-wide text-slate-500">
               Recommended Next Step
             </p>
-            <p className="text-white/80">{content?.nextStep}</p>
+            <p className="text-slate-800">{content?.nextStep}</p>
           </div>
         </div>
       </CardContent>

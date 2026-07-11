@@ -27,7 +27,7 @@ export function SignOutButton() {
       variant="outline"
       onClick={handleSignOut}
       disabled={isSigningOut}
-      className="border-white/10 text-white/70 hover:bg-white/5"
+      className="border-slate-200 text-slate-700 hover:bg-slate-100"
     >
       {isSigningOut ? (
         <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />

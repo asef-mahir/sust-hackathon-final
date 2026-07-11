@@ -20,9 +20,9 @@ export async function RecentTransactionsSection({ agentId }) {
   );
 
   return (
-    <Card className="bg-surface border-white/10">
+    <Card className="bg-surface border-slate-200">
       <CardHeader>
-        <CardTitle className="text-sm font-medium text-white/80">
+        <CardTitle className="text-sm font-medium text-slate-800">
           Recent Transactions
         </CardTitle>
       </CardHeader>
@@ -36,13 +36,13 @@ export async function RecentTransactionsSection({ agentId }) {
             {body.data.transactions.map((txn) => (
               <div
                 key={txn.id}
-                className="flex items-center justify-between border-b border-white/5 py-2 text-sm last:border-0"
+                className="flex items-center justify-between border-b border-slate-100 py-2 text-sm last:border-0"
               >
                 <div>
-                  <span className="text-white/80">{txn.type === 'CASH_OUT' ? 'Cash Out' : 'Cash In'}</span>
-                  <span className="ml-2 text-xs text-white/40">{txn.provider?.name}</span>
+                  <span className="text-slate-800">{txn.type === 'CASH_OUT' ? 'Cash Out' : 'Cash In'}</span>
+                  <span className="ml-2 text-xs text-slate-500">{txn.provider?.name}</span>
                 </div>
-                <span className="ls-numeric text-white/70">
+                <span className="ls-numeric text-slate-700">
                   {formatCurrency(txn.amount)}
                 </span>
               </div>

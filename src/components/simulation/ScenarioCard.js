@@ -25,12 +25,12 @@ import { Loader2, Lock } from 'lucide-react';
 export function ScenarioCard({ label, description, disabled = false, isRunning = false, onRun }) {
   return (
     <Card
-      className={`border-white/10 ${disabled ? 'bg-white/[0.02] opacity-60' : 'bg-surface'}`}
+      className={`border-slate-200 ${disabled ? 'bg-slate-50 opacity-60' : 'bg-surface'}`}
     >
       <CardContent className="flex flex-col gap-3 p-4">
         <div>
-          <p className="text-sm font-semibold text-white">{label}</p>
-          <p className="mt-1 text-xs text-white/50">{description}</p>
+          <p className="text-sm font-semibold text-slate-900">{label}</p>
+          <p className="mt-1 text-xs text-slate-500">{description}</p>
         </div>
         <Button
           size="sm"

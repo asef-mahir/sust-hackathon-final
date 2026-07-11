@@ -12,7 +12,7 @@ const STATUS_STYLES = {
   ACKNOWLEDGED: 'bg-brass/15 text-brass',
   IN_PROGRESS: 'bg-brass/15 text-brass',
   RESOLVED: 'bg-healthy/15 text-healthy',
-  DISMISSED: 'bg-white/10 text-white/40',
+  DISMISSED: 'bg-slate-100 text-slate-500',
 };
 
 const STATUS_LABELS = {

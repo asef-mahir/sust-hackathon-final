@@ -42,9 +42,9 @@ export function Sidebar({ role }) {
   const visibleItems = NAV_ITEMS.filter((item) => !role || item.roles.includes(role));
 
   return (
-    <nav className="flex h-full w-56 flex-col gap-1 border-r border-white/10 bg-surface p-4">
+    <nav className="flex h-full w-56 flex-col gap-1 border-r border-slate-200 bg-surface p-4">
       <div className="mb-4 px-2">
-        <p className="text-sm font-semibold text-white">Liquidity Sentinel</p>
+        <p className="text-sm font-semibold text-slate-900">Liquidity Sentinel</p>
       </div>
 
       {visibleItems.map((item) => {
@@ -55,7 +55,7 @@ export function Sidebar({ role }) {
           return (
             <span
               key={item.href}
-              className="flex cursor-not-allowed items-center gap-2 rounded-md px-2 py-1.5 text-sm text-white/25"
+              className="flex cursor-not-allowed items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-400"
               title="Not yet built"
             >
               <Icon className="h-4 w-4" />
@@ -71,7 +71,7 @@ export function Sidebar({ role }) {
             className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
               isActive
                 ? 'bg-brass/15 text-brass'
-                : 'text-white/60 hover:bg-white/5 hover:text-white'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             }`}
           >
             <Icon className="h-4 w-4" />

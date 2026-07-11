@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 const CONFIDENCE_STYLES = {
   HIGH: 'bg-critical/15 text-critical border-critical/30',
   MEDIUM: 'bg-brass/15 text-brass border-brass/30',
-  LOW: 'bg-white/10 text-white/60 border-white/20',
+  LOW: 'bg-slate-100 text-slate-600 border-slate-300',
 };
 
 /**

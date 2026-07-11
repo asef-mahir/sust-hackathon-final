@@ -80,9 +80,9 @@ export function AlertFilters({ providers }) {
 function FilterSelect({ label, value, options, onChange }) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-xs text-white/40">{label}</span>
+      <span className="text-xs text-slate-500">{label}</span>
       <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="w-44 border-white/10 bg-surface text-sm">
+        <SelectTrigger className="w-44 border-slate-200 bg-surface text-sm">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

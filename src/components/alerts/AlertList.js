@@ -66,7 +66,7 @@ export function AlertList({ initialAlerts, initialNextCursor }) {
           size="sm"
           onClick={handleLoadMore}
           disabled={isLoadingMore}
-          className="mt-2 self-center border-white/10 text-white/60"
+          className="mt-2 self-center border-slate-200 text-slate-600"
         >
           {isLoadingMore ? (
             <>

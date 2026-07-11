@@ -19,20 +19,20 @@ const SCENARIO_LABELS = {
  */
 export function AlertSummaryHeader({ alert }) {
   return (
-    <header className="border-b border-white/10 pb-4">
+    <header className="border-b border-slate-200 pb-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-lg font-semibold text-white">
+        <h1 className="text-lg font-semibold text-slate-900">
           {SCENARIO_LABELS[alert.scenarioType] ?? alert.scenarioType}
         </h1>
         <StatusPill status={alert.status} />
         <RiskBadge confidence={alert.confidence} />
       </div>
-      <p className="mt-1 text-sm text-white/50">
+      <p className="mt-1 text-sm text-slate-500">
         {alert.agent?.outletCode} ({alert.agent?.name})
         {alert.provider ? ` · ${alert.provider.name}` : ' · Network-wide'}
         {alert.owner ? ` · Owned by ${alert.owner.name}` : ' · Unassigned'}
       </p>
-      <p className="mt-1 text-xs text-white/30">
+      <p className="mt-1 text-xs text-slate-400">
         Opened {new Date(alert.createdAt).toLocaleString()}
       </p>
     </header>

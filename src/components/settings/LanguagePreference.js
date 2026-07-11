@@ -39,15 +39,15 @@ export function LanguagePreference() {
   }
 
   return (
-    <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3">
+    <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
       <div>
-        <p className="text-sm text-white/70">Default Explanation Language</p>
-        <p className="text-xs text-white/30">
+        <p className="text-sm text-slate-700">Default Explanation Language</p>
+        <p className="text-xs text-slate-400">
           Which language tab Alert Details opens on by default.
         </p>
       </div>
       <Select value={value} onValueChange={handleChange}>
-        <SelectTrigger className="w-40 border-white/10 bg-surface">
+        <SelectTrigger className="w-40 border-slate-200 bg-surface">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

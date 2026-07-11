@@ -31,23 +31,23 @@ export function AlertListItem(alert) {
 
   return (
     <Link href={`/alerts/${id}`}>
-      <Card className="border-white/10 bg-surface transition-colors hover:bg-white/[0.04]">
+      <Card className="border-slate-200 bg-surface transition-colors hover:bg-slate-100">
         <CardContent className="flex items-center justify-between gap-4 p-4">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <p className="truncate text-sm font-medium text-white">
+              <p className="truncate text-sm font-medium text-slate-900">
                 {SCENARIO_LABELS[scenarioType] ?? scenarioType}
               </p>
               <StatusPill status={status} />
             </div>
-            <p className="mt-1 truncate text-xs text-white/40">
+            <p className="mt-1 truncate text-xs text-slate-500">
               {agent?.outletCode} · {provider?.name ?? 'Network-wide'} ·{' '}
               {owner ? `Owned by ${owner.name}` : 'Unassigned'}
             </p>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1">
             <RiskBadge confidence={confidence} />
-            <span className="text-xs text-white/30">{formatRelativeTime(createdAt)}</span>
+            <span className="text-xs text-slate-400">{formatRelativeTime(createdAt)}</span>
           </div>
         </CardContent>
       </Card>

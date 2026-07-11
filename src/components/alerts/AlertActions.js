@@ -116,7 +116,7 @@ export function AlertActions({ alertId, availableActions, owners }) {
 
   if (availableActions.length === 0) {
     return (
-      <p className="text-sm text-white/40">
+      <p className="text-sm text-slate-500">
         This alert is closed — no further actions are available.
       </p>
     );
@@ -140,7 +140,7 @@ export function AlertActions({ alertId, availableActions, owners }) {
                 variant={action === 'DISMISS' ? 'outline' : 'default'}
                 className={
                   action === 'DISMISS'
-                    ? 'border-white/10 text-white/60'
+                    ? 'border-slate-200 text-slate-600'
                     : 'bg-brass text-ink hover:bg-brass/90'
                 }
               >
@@ -157,9 +157,9 @@ export function AlertActions({ alertId, availableActions, owners }) {
             <div className="flex flex-col gap-3">
               {action === 'ESCALATE' ? (
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs text-white/50">Escalate to</label>
+                  <label className="text-xs text-slate-500">Escalate to</label>
                   <Select value={escalateToOwnerId} onValueChange={setEscalateToOwnerId}>
-                    <SelectTrigger className="border-white/10 bg-ink">
+                    <SelectTrigger className="border-slate-200 bg-white">
                       <SelectValue placeholder="Select a team member" />
                     </SelectTrigger>
                     <SelectContent>
@@ -176,14 +176,14 @@ export function AlertActions({ alertId, availableActions, owners }) {
               ) : null}
 
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-white/50">
+                <label className="text-xs text-slate-500">
                   Note {action === 'ESCALATE' ? '(required)' : '(optional)'}
                 </label>
                 <Textarea
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   placeholder="Add context for the audit trail…"
-                  className="border-white/10 bg-ink text-sm"
+                  className="border-slate-200 bg-white text-sm"
                 />
               </div>
             </div>

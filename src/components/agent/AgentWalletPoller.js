@@ -66,7 +66,7 @@ export function AgentWalletPoller({ agentId, initialData }) {
       <CashDrawerCard physicalCash={data.agent.physicalCash} />
 
       <div>
-        <h2 className="mb-2 text-sm font-medium text-white/60">Provider Wallets</h2>
+        <h2 className="mb-2 text-sm font-medium text-slate-600">Provider Wallets</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {data.liquidity.providerBalances.map((p) => (
             <ProviderCard
@@ -81,7 +81,7 @@ export function AgentWalletPoller({ agentId, initialData }) {
       </div>
 
       <div>
-        <h2 className="mb-2 text-sm font-medium text-white/60">Current Alerts</h2>
+        <h2 className="mb-2 text-sm font-medium text-slate-600">Current Alerts</h2>
         <CurrentAlertsList alerts={data.activeAlerts} />
       </div>
     </div>

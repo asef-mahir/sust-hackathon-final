@@ -48,10 +48,10 @@ export function ConfirmationDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="border-white/10 bg-surface text-white">
+      <DialogContent className="border-slate-200 bg-surface text-slate-900">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription className="text-white/50">{description}</DialogDescription>
+          <DialogDescription className="text-slate-500">{description}</DialogDescription>
         </DialogHeader>
 
         {children ? <div className="py-2">{children}</div> : null}
@@ -61,7 +61,7 @@ export function ConfirmationDialog({
             variant="outline"
             onClick={() => onOpenChange(false)}
             disabled={isLoading}
-            className="border-white/10 text-white/60"
+            className="border-slate-200 text-slate-600"
           >
             Cancel
           </Button>

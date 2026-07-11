@@ -9,8 +9,9 @@
 import { Card, CardContent } from '@/components/ui/card';
 
 const TONE_CLASSES = {
-  neutral: 'text-white',
+  neutral: 'text-slate-900',
   brass: 'text-brass',
+  warning: 'text-brass',
   critical: 'text-critical',
   healthy: 'text-healthy',
 };
@@ -20,15 +21,15 @@ const TONE_CLASSES = {
  */
 export function StatCard({ label, value, tone = 'neutral', icon }) {
   return (
-    <Card className="bg-surface border-white/10">
+    <Card className="bg-surface border-slate-200">
       <CardContent className="flex items-center justify-between p-4">
         <div>
-          <p className="text-xs uppercase tracking-wide text-white/50">{label}</p>
+          <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
           <p className={`ls-numeric text-2xl font-semibold ${TONE_CLASSES[tone]}`}>
             {value}
           </p>
         </div>
-        {icon ? <div className="text-white/30">{icon}</div> : null}
+        {icon ? <div className="text-slate-400">{icon}</div> : null}
       </CardContent>
     </Card>
   );
