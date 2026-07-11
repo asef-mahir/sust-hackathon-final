@@ -79,13 +79,19 @@ function generateHighVelocityScenario({ targetProviderId, rng }) {
   const transactions = [];
   let cumulativeOffsetMs = 0;
 
+  // Weight most of the burst onto one synthetic account (4 of 6) to
+  // demonstrate a repeating-customer-ID pattern for the Risk dashboard's
+  // Synthetic Account Watchlist, with the remainder on a second account.
+  const SYNTHETIC_ACCOUNTS = ['CUST-SIM-999', 'CUST-SIM-999', 'CUST-SIM-999', 'CUST-SIM-999', 'CUST-SIM-888', 'CUST-SIM-888'];
+
   for (let i = 0; i < transactionCount; i += 1) {
-    cumulativeOffsetMs += randomAmountBetween(rng, 60_000, 150_000); 
+    cumulativeOffsetMs += randomAmountBetween(rng, 60_000, 150_000);
     transactions.push({
       providerId: targetProviderId,
       type: 'CASH_OUT', // CASH_OUT depletes physical cash drawer
       amount: Math.round(clusterBaseAmount * (0.96 + rng() * 0.08)),
       timestamp: new Date(Date.now() - (12 * 60_000 - cumulativeOffsetMs)),
+      syntheticAccountId: SYNTHETIC_ACCOUNTS[i] ?? null,
     });
   }
 
@@ -217,6 +223,7 @@ export async function runSimulationScenario({
           isLate: txnInput.isLate ?? false,
           isConflicting: txnInput.isConflicting ?? false,
           timestamp: txnInput.timestamp ?? new Date(),
+          syntheticAccountId: txnInput.syntheticAccountId ?? null,
         },
       });
     }

@@ -133,6 +133,15 @@ async function velocityRule(agentId) {
       isAmountClustered: isClustered,
       meanAmount: mean,
       contributingTransactionIds: flaggedTransactions.map((t) => t.id),
+      // Per-transaction detail (time/amount/synthetic account) so the Risk
+      // dashboard's cluster scatter plot and synthetic account watchlist
+      // can render directly from stored evidence, with no extra API needed.
+      contributingTransactions: flaggedTransactions.map((t) => ({
+        id: t.id,
+        amount: t.amount.toNumber(),
+        timestamp: t.timestamp.toISOString(),
+        syntheticAccountId: t.syntheticAccountId,
+      })),
     },
   };
 }

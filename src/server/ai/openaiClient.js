@@ -69,8 +69,11 @@ function buildAdvisoryPrompt(finding) {
     '"bn" must be written in Bengali script. "banglish" must be Bengali written in Latin script (transliterated), not English translation.',
   ].join(' ');
 
-  // Token Optimization: Strip large ID arrays from the evidence payload to reduce latency
-  const { contributingTransactionIds, ...safeEvidence } = finding.evidence || {};
+  // Token Optimization: Strip large ID/per-transaction arrays from the evidence
+  // payload to reduce latency — the rule engine's confidenceReason already
+  // summarizes them; the raw arrays are only needed for the Risk dashboard's
+  // scatter plot / watchlist UI, not for the LLM prompt.
+  const { contributingTransactionIds, contributingTransactions, ...safeEvidence } = finding.evidence || {};
 
   const user = JSON.stringify({
     scenarioType: finding.scenarioType,
