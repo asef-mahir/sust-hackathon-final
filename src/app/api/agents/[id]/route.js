@@ -40,6 +40,8 @@ export async function GET(request, { params }) {
             confidence: true,
             providerId: true,
             createdAt: true,
+            evidence: true,      // FIXED: Missing database field included
+            explanations: true,  // FIXED: Missing database field included
           },
         },
       },
@@ -73,6 +75,38 @@ export async function GET(request, { params }) {
           : 0,
     }));
 
+    // -------------------------------------------------------------------------
+    // Dynamic Predictive Cash Forecast Generation (Operational Component Data)
+    // -------------------------------------------------------------------------
+    let forecast = null;
+    const hiddenShortageAlert = agent.alerts.find(a => a.scenarioType === 'HIDDEN_SHORTAGE');
+    
+    if (hiddenShortageAlert && hiddenShortageAlert.evidence) {
+      const evidenceData = typeof hiddenShortageAlert.evidence === 'string'
+        ? JSON.parse(hiddenShortageAlert.evidence)
+        : hiddenShortageAlert.evidence;
+
+      if (evidenceData.projectedDepletionMinutes) {
+        const criticalTime = new Date(
+          new Date(hiddenShortageAlert.createdAt).getTime() + 
+          evidenceData.projectedDepletionMinutes * 60 * 1000
+        ).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        // Target target threshold buffer rule
+        const requiredAmount = Math.max(
+          20000,
+          Math.round((evidenceData.hourlyBurnRate || 0) * (evidenceData.projectedDepletionMinutes / 60) * 1.5)
+        );
+
+        forecast = {
+          criticalTime,
+          requiredAmount,
+          hourlyBurnRate: Math.round(evidenceData.hourlyBurnRate || 0),
+          minutesRemaining: evidenceData.projectedDepletionMinutes
+        };
+      }
+    }
+
     return successResponse(
       {
         agent: {
@@ -88,6 +122,7 @@ export async function GET(request, { params }) {
         liquidity: {
           totalLiquidity: totalLiquidityNumber.toFixed(2),
           providerBalances,
+          forecast, // Formatted dynamic predictive data for front-end view card
         },
         activeAlerts: agent.alerts,
       },

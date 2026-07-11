@@ -1,16 +1,9 @@
-/**
- * app/api/simulation/scenarios/route.js
- *
- * GET /api/simulation/scenarios
- *
- * Thin wrapper — simulationEngine.listAvailableScenarios() already existed
- * (Phase 2) but was never exposed over HTTP. No business logic added here;
- * this route's only job is auth + calling the existing function.
- */
-
 import { requireRole } from '@/lib/apiAuth';
 import { successResponse, errorResponse } from '@/lib/apiResponse';
 import { listAvailableScenarios } from '@/server/services/simulationEngine';
+
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {

@@ -9,8 +9,9 @@ import { generateAlertAdvisory } from '@/server/ai/openaiClient';
 /** Statuses that count as "already open" for dedup purposes. */
 const OPEN_ALERT_STATUSES = ['PENDING', 'ACKNOWLEDGED', 'IN_PROGRESS'];
 
+// UPDATE: Added 'DATA_INCONSISTENCY' to the allowed enum
 const requestSchema = z.object({
-  scenarioType: z.enum(['HIDDEN_SHORTAGE', 'HIGH_VELOCITY']),
+  scenarioType: z.enum(['HIDDEN_SHORTAGE', 'HIGH_VELOCITY', 'DATA_INCONSISTENCY']),
   agentId: z.string().min(1, 'agentId is required'),
   targetProviderId: z.string().min(1, 'targetProviderId is required'),
   seed: z.number().int().optional(),
@@ -65,6 +66,8 @@ async function createAlertFromFinding(finding) {
     confidence: finding.confidence,
     confidenceReason: finding.confidenceReason,
     evidence: finding.evidence,
+    recommendedAction: finding.recommendedAction,
+    targetStakeholder: finding.targetStakeholder,
   });
 
   return prisma.alert.update({

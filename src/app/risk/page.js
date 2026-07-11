@@ -382,7 +382,7 @@ export default function RiskDashboardPage() {
                   <div className="flex flex-wrap items-center gap-2 md:flex-col md:items-end lg:flex-row">
                     {alert.status === 'PENDING' && (
                       <button
-                        onClick={() => handleAction(alert.id, 'ACKNOWLEDGE')}
+                        onClick={() => handleAction(alert.id, 'ACKNOWLEDGE', 'Risk analyst reviewing evidence.')}
                         disabled={isProcessing}
                         className="inline-flex items-center justify-center rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-cyan-700 disabled:opacity-50"
                       >
@@ -393,13 +393,10 @@ export default function RiskDashboardPage() {
 
                     {(alert.status === 'ACKNOWLEDGED' || alert.status === 'IN_PROGRESS') && (
                       <button
-                        onClick={() =>
-                          handleAction(
-                            alert.id,
-                            'RESOLVE',
-                            'Reviewed by Risk analyst — pattern confirmed resolved.'
-                          )
-                        }
+                        onClick={() => {
+                          const note = window.prompt("Enter resolution note (e.g., 'Reviewed cluster. Legitimate Eid spike. No fraud detected.'):");
+                          if (note) handleAction(alert.id, 'RESOLVE', note);
+                        }}
                         disabled={isProcessing}
                         className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-emerald-700 disabled:opacity-50"
                       >
@@ -410,13 +407,10 @@ export default function RiskDashboardPage() {
 
                     {!isTerminal && (
                       <button
-                        onClick={() =>
-                          handleAction(
-                            alert.id,
-                            'DISMISS',
-                            'False positive — reviewed by Risk analyst.'
-                          )
-                        }
+                        onClick={() => {
+                          const note = window.prompt("Reason for dismissal:");
+                          if (note) handleAction(alert.id, 'DISMISS', note);
+                        }}
                         disabled={isProcessing}
                         className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:bg-slate-50 disabled:opacity-50"
                       >

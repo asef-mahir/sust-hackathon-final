@@ -111,11 +111,30 @@ async function velocityRule(agentId) {
 
   const amounts = flaggedTransactions.map((t) => t.amount.toNumber());
   const mean = amounts.reduce((sum, a) => sum + a, 0) / amounts.length;
+  const currentWindowVolume = amounts.reduce((sum, a) => sum + a, 0);
   const isClustered = amounts.every((a) => Math.abs(a - mean) / mean <= AMOUNT_CLUSTER_TOLERANCE);
 
-  // False-positive check: We can add historical baseline logic here.
-  // For the hackathon, we assume clustered amounts are higher risk than just volume.
-  let baseConfidence = isClustered ? 'HIGH' : 'MEDIUM';
+  // Advanced False-Positive Check: Compare against 24-hour baseline moving average
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const baseline = await prisma.transaction.aggregate({
+    where: { agentId, providerId: flaggedProviderId, timestamp: { gte: oneDayAgo, lt: windowStart } },
+    _sum: { amount: true }
+  });
+  
+  const hourlyAvgVolume = (baseline._sum.amount ? baseline._sum.amount.toNumber() : 0) / 24;
+  const projectedHourlyPace = currentWindowVolume * (60 / VELOCITY_WINDOW_MINUTES);
+  
+  let baseConfidence = 'LOW';
+  let volumeContext = '';
+
+  if (hourlyAvgVolume > 0) {
+    const surgeRatio = projectedHourlyPace / hourlyAvgVolume;
+    if (surgeRatio > 3 && isClustered) baseConfidence = 'HIGH';
+    else if (surgeRatio > 1.5 || isClustered) baseConfidence = 'MEDIUM';
+    volumeContext = ` This pace is ${surgeRatio.toFixed(1)}x higher than the agent's 24-hour historical average.`;
+  } else {
+    baseConfidence = isClustered ? 'HIGH' : 'MEDIUM';
+  }
 
   return {
     scenarioType: 'HIGH_VELOCITY',
@@ -123,8 +142,8 @@ async function velocityRule(agentId) {
     providerId: flaggedProviderId,
     confidence: baseConfidence,
     confidenceReason: isClustered
-      ? `${flaggedTransactions.length} transactions in ${VELOCITY_WINDOW_MINUTES} mins are highly clustered around ${mean.toFixed(2)}.`
-      : `High transaction volume (${flaggedTransactions.length}) detected within ${VELOCITY_WINDOW_MINUTES} minutes.`,
+      ? `${flaggedTransactions.length} transactions in ${VELOCITY_WINDOW_MINUTES} mins are highly clustered around ৳${mean.toFixed(2)}.${volumeContext}`
+      : `High transaction volume (${flaggedTransactions.length}) detected within ${VELOCITY_WINDOW_MINUTES} minutes.${volumeContext}`,
     targetStakeholder: 'RISK_ANALYST',
     recommendedAction: 'Review transaction patterns; do not block agent without manual confirmation.',
     evidence: {
@@ -132,10 +151,9 @@ async function velocityRule(agentId) {
       transactionCount: flaggedTransactions.length,
       isAmountClustered: isClustered,
       meanAmount: mean,
+      hourlyAvgVolume,
+      projectedHourlyPace,
       contributingTransactionIds: flaggedTransactions.map((t) => t.id),
-      // Per-transaction detail (time/amount/synthetic account) so the Risk
-      // dashboard's cluster scatter plot and synthetic account watchlist
-      // can render directly from stored evidence, with no extra API needed.
       contributingTransactions: flaggedTransactions.map((t) => ({
         id: t.id,
         amount: t.amount.toNumber(),
@@ -147,7 +165,6 @@ async function velocityRule(agentId) {
 }
 
 async function dataIntegrityRule(agentId) {
-  // Scenario C: Catch missing, late, or conflicting data feeds across providers
   const windowStart = new Date(Date.now() - VELOCITY_WINDOW_MINUTES * 60_000);
   const recentTransactions = await prisma.transaction.findMany({
     where: { agentId, timestamp: { gte: windowStart } }
@@ -159,7 +176,7 @@ async function dataIntegrityRule(agentId) {
     return {
       scenarioType: 'DATA_INCONSISTENCY',
       agentId,
-      providerId: conflictingTxns[0].providerId, // Tag the first affected provider
+      providerId: conflictingTxns[0].providerId,
       confidence: 'HIGH',
       confidenceReason: `${conflictingTxns.length} conflicting or delayed records found in recent data feeds.`,
       targetStakeholder: 'OPERATIONS_TEAM',
