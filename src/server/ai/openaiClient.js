@@ -68,6 +68,8 @@ function buildAdvisoryPrompt(finding) {
     'Each "evidence" gives the exact number or time involved, under 20 words.',
     'Each "nextStep" is a safe, polite recommendation (e.g., "Please check your balance," or "Contact your area manager"), under 15 words.',
     '"bn" must be written in Bengali script. "banglish" must be Bengali written in Latin script (transliterated), not an English translation.',
+    'Use natural, everyday spoken Bengali, not stiff literal word-for-word translation. For example, to say "in a short time" use "কম সময়ে", not the more literal but awkward "ছোট সময়ে" or "সংক্ষিপ্ত সময়ে".',
+    'Never state a time of day (like "রাত", "সকাল", or "বিকেল") yourself — the app inserts the exact time separately; just describe the situation and the number.',
   ].join(' ');
 
   // Token Optimization: Strip large ID/per-transaction arrays from the evidence

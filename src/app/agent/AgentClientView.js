@@ -185,7 +185,7 @@ export default function AgentClientView({ agentId }) {
           <p className="text-sm text-slate-700 leading-relaxed">
             {langPreference === 'bn' ? (
               <>
-                লেনদেনের বর্তমান গতি অনুযায়ী, আপনার ব্যবসা সচল রাখতে আজ বিকেল <span className="font-bold text-slate-900 text-base">{liquidity.forecast.criticalTime}</span> টার মধ্যে আনুমানিক <span className="font-bold text-slate-900 text-base">৳{liquidity.forecast.requiredAmount.toLocaleString()}</span> {isPhysicalRisk ? 'ক্যাশ টাকার' : `${targetProvider} ই-মানি`} প্রয়োজন হতে পারে।
+                লেনদেনের বর্তমান গতি অনুযায়ী, আপনার ব্যবসা সচল রাখতে আজ {liquidity.forecast.periodBn ?? 'দিন'} <span className="font-bold text-slate-900 text-base">{liquidity.forecast.criticalTime}</span> টার মধ্যে আনুমানিক <span className="font-bold text-slate-900 text-base">৳{liquidity.forecast.requiredAmount.toLocaleString()}</span> {isPhysicalRisk ? 'ক্যাশ টাকার' : `${targetProvider} ই-মানি`} প্রয়োজন হতে পারে।
               </>
             ) : langPreference === 'banglish' ? (
               <>

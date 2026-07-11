@@ -121,10 +121,28 @@ export async function GET(request, { params }) {
         : hiddenShortageAlert.evidence;
 
       if (evidenceData.projectedDepletionMinutes) {
-        const criticalTime = new Date(
-          new Date(hiddenShortageAlert.createdAt).getTime() + 
+        const criticalDate = new Date(
+          new Date(hiddenShortageAlert.createdAt).getTime() +
           evidenceData.projectedDepletionMinutes * 60 * 1000
-        ).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        );
+
+        // Always format/derive against Bangladesh time (Asia/Dhaka), not the
+        // server's own timezone — this data is shown to agents in Bangladesh
+        // regardless of where the server process happens to run.
+        const criticalTime = criticalDate.toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'Asia/Dhaka',
+        });
+        const dhakaHour = Number(
+          criticalDate.toLocaleString('en-US', {
+            hour: '2-digit',
+            hour12: false,
+            timeZone: 'Asia/Dhaka',
+          })
+        );
+        // 7pm-4am is night, the rest of the day is day.
+        const periodBn = dhakaHour >= 19 || dhakaHour < 4 ? 'রাত' : 'দিন';
 
         // Calculate a safe buffer amount needed
         const requiredAmount = Math.max(
@@ -134,6 +152,7 @@ export async function GET(request, { params }) {
 
         forecast = {
           criticalTime,
+          periodBn,
           requiredAmount,
           hourlyBurnRate: Math.round(evidenceData.hourlyBurnRate || 0),
           minutesRemaining: evidenceData.projectedDepletionMinutes,
