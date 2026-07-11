@@ -1,14 +1,3 @@
-/**
- * app/analytics/page.js
- *
- * PAGE 6 — Analytics (route: "/analytics")
- *
- * Server Component. Reuses API 4 (dashboard) for provider balances +
- * top risk areas, the new /api/analytics/areas for the fuller area
- * comparison table. Forecasting section is an honest empty state — see
- * the gap check before this page was built.
- */
-
 import { serverApiFetch } from '@/lib/serverApiFetch';
 import { ProviderComparisonChart } from '@/components/analytics/ProviderComparisonChart';
 import { AreaComparisonTable } from '@/components/analytics/AreaComparisonTable';

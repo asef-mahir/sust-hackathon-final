@@ -1,13 +1,3 @@
-/**
- * app/settings/page.js
- *
- * PAGE 7 — Settings (route: "/settings")
- *
- * Mostly a thin server shell around client controls, since every control
- * here either mutates (reset) or is a client-only preference (language,
- * sign out). No data fetching needed for this page itself.
- */
-
 import { SignOutButton } from '@/components/settings/SignOutButton';
 import { SimulationResetButton } from '@/components/settings/SimulationResetButton';
 import { ThemeToggle } from '@/components/settings/ThemeToggle';

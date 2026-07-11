@@ -1,15 +1,5 @@
 'use client';
 
-/**
- * components/settings/SignOutButton.js
- *
- * The real mechanism behind "Role Switch": sign out, then sign back in
- * as a different seeded demo account. A fake client-side role preview
- * was deliberately rejected — see the gap check before this page — since
- * the API layer enforces the real session role regardless of what the
- * UI shows, which would produce confusing 403s if they disagreed.
- */
-
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
@@ -23,7 +13,11 @@ export function SignOutButton() {
   async function handleSignOut() {
     setIsSigningOut(true);
     const supabase = createClient();
+    
+    // Clear the Supabase session
     await supabase.auth.signOut();
+    
+    // Redirect to login and force Next.js Server Components to re-evaluate
     router.push('/login');
     router.refresh();
   }

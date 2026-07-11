@@ -1,14 +1,3 @@
-/**
- * app/agent/page.js
- *
- * PAGE 5 — Agent View (route: "/agent")
- *
- * No [id] in the URL — the agent is determined from the logged-in
- * session (Owner.managedAgentId), not a route param. If the current user
- * has no linked outlet (wrong role, or an unlinked AGENT account), shows
- * an honest empty state rather than crashing or guessing an agent.
- */
-
 import { Suspense } from 'react';
 import { getSessionOwner } from '@/lib/getSessionOwner';
 import { serverApiFetch } from '@/lib/serverApiFetch';
