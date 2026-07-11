@@ -31,6 +31,25 @@ function generateHiddenShortageScenario({ targetProviderId, rng, intensity = 1.0
   return transactions;
 }
 
+// NEW SCENARIO: Drains the physical drawer using randomized, high-volume cash-outs
+function generatePhysicalCashShortageScenario({ targetProviderId, rng, intensity = 1.0 }) {
+  const transactionCount = Math.floor(6 * intensity);
+  const transactions = [];
+  let cumulativeOffsetMs = 0;
+
+  for (let i = 0; i < transactionCount; i += 1) {
+    cumulativeOffsetMs += randomAmountBetween(rng, 30_000, 150_000); 
+    transactions.push({
+      providerId: targetProviderId,
+      type: 'CASH_OUT', // CASH_OUT depletes the physical cash drawer
+      // Wide randomization bypasses the "Amount Clustering" fraud check
+      amount: randomAmountBetween(rng, 10000 * intensity, 20000 * intensity),
+      timestamp: new Date(Date.now() - (8 * 60_000 - cumulativeOffsetMs)),
+    });
+  }
+  return transactions;
+}
+
 function generateHighVelocityScenario({ targetProviderId, rng, intensity = 1.0 }) {
   const transactionCount = Math.max(6, Math.floor(6 * intensity));
   const clusterBaseAmount = randomAmountBetween(rng, 4800, 5200);
@@ -73,6 +92,7 @@ function generateDataInconsistencyScenario({ targetProviderId, rng, intensity = 
 
 const SCENARIO_GENERATORS = {
   HIDDEN_SHORTAGE: generateHiddenShortageScenario,
+  PHYSICAL_CASH_EXHAUSTION: generatePhysicalCashShortageScenario, // ADDED
   HIGH_VELOCITY: generateHighVelocityScenario,
   DATA_INCONSISTENCY: generateDataInconsistencyScenario,
 };
@@ -126,7 +146,6 @@ export async function runSimulationScenario({
     let runningPhysicalCash = agent.physicalCash;
     let runningProviderBalance = providerBalanceRow.balance;
 
-    // Map elements in memory first to prevent N+1 query loop patterns
     const transactionsToInsert = syntheticTransactions.map((txnInput) => {
       const updated = applyBalanceEffect(
         { physicalCash: runningPhysicalCash, providerBalance: runningProviderBalance },
@@ -147,7 +166,6 @@ export async function runSimulationScenario({
       };
     });
 
-    // FIXED: Batched database insert execution drops write speeds down drastically
     await tx.transaction.createMany({
       data: transactionsToInsert,
     });
@@ -186,8 +204,13 @@ export function listAvailableScenarios() {
   return [
     {
       id: 'HIDDEN_SHORTAGE',
-      label: 'Hidden Provider Shortage',
-      description: 'Injects a burst of cash-in transactions against one provider, draining that provider\'s electronic balance while total agent physical cash reserves remain healthy.',
+      label: 'Hidden Provider Shortage (E-Money)',
+      description: 'Injects a burst of cash-in transactions against one provider, draining that provider\'s electronic balance.',
+    },
+    {
+      id: 'PHYSICAL_CASH_EXHAUSTION',
+      label: 'Physical Cash Exhaustion',
+      description: 'Injects high-value cash-out transactions, draining the agent\'s physical cash drawer to trigger a dual-vector liquidity warning.',
     },
     {
       id: 'HIGH_VELOCITY',

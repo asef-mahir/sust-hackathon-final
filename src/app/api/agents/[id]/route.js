@@ -26,6 +26,7 @@ export async function GET(request, { params }) {
       return errorResponse('You are not authorized to view this agent.', 403);
     }
 
+    // 1. Fetch Agent & Active Alerts
     const agent = await prisma.agent.findUnique({
       where: { id: agentId },
       include: {
@@ -40,8 +41,8 @@ export async function GET(request, { params }) {
             confidence: true,
             providerId: true,
             createdAt: true,
-            evidence: true,      // FIXED: Missing database field included
-            explanations: true,  // FIXED: Missing database field included
+            evidence: true,      
+            explanations: true,  
           },
         },
       },
@@ -51,6 +52,41 @@ export async function GET(request, { params }) {
       return errorResponse(`Agent not found: ${agentId}`, 404);
     }
 
+    // 2. Fetch Recent Transactions for Dashboard Graphs (NEW)
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const recentTransactions = await prisma.transaction.findMany({
+      where: { 
+        agentId: agentId,
+        timestamp: { gte: twentyFourHoursAgo }
+      },
+      orderBy: { timestamp: 'desc' },
+      take: 50, // Limit to recent 50 for the graph to keep the payload light
+      select: {
+        id: true,
+        type: true,
+        amount: true,
+        timestamp: true,
+        provider: { select: { code: true } }
+      }
+    });
+
+    // Calculate Daily Stats for the Graph Header
+    let totalCashIn = 0;
+    let totalCashOut = 0;
+    const chartDataFormatted = recentTransactions.map(tx => {
+      const amt = tx.amount.toNumber();
+      if (tx.type === 'CASH_IN') totalCashIn += amt;
+      if (tx.type === 'CASH_OUT') totalCashOut += amt;
+      
+      return {
+        timestamp: tx.timestamp,
+        amount: amt,
+        type: tx.type,
+        providerCode: tx.provider.code
+      };
+    });
+
+    // 3. Calculate Balances
     const physicalCashNumber = agent.physicalCash.toNumber();
     const providerBalancesRaw = agent.balances.map((b) => ({
       providerId: b.providerId,
@@ -75,9 +111,7 @@ export async function GET(request, { params }) {
           : 0,
     }));
 
-    // -------------------------------------------------------------------------
-    // Dynamic Predictive Cash Forecast Generation (Operational Component Data)
-    // -------------------------------------------------------------------------
+    // 4. Dynamic Predictive Cash Forecast Generation
     let forecast = null;
     const hiddenShortageAlert = agent.alerts.find(a => a.scenarioType === 'HIDDEN_SHORTAGE');
     
@@ -92,7 +126,7 @@ export async function GET(request, { params }) {
           evidenceData.projectedDepletionMinutes * 60 * 1000
         ).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-        // Target target threshold buffer rule
+        // Calculate a safe buffer amount needed
         const requiredAmount = Math.max(
           20000,
           Math.round((evidenceData.hourlyBurnRate || 0) * (evidenceData.projectedDepletionMinutes / 60) * 1.5)
@@ -102,7 +136,10 @@ export async function GET(request, { params }) {
           criticalTime,
           requiredAmount,
           hourlyBurnRate: Math.round(evidenceData.hourlyBurnRate || 0),
-          minutesRemaining: evidenceData.projectedDepletionMinutes
+          minutesRemaining: evidenceData.projectedDepletionMinutes,
+          // NEW: Tells the frontend exactly what is running out
+          primaryRiskVector: evidenceData.primaryRiskVector || 'PROVIDER_BALANCE',
+          providerCode: evidenceData.thinProvider?.providerCode || null
         };
       }
     }
@@ -122,9 +159,18 @@ export async function GET(request, { params }) {
         liquidity: {
           totalLiquidity: totalLiquidityNumber.toFixed(2),
           providerBalances,
-          forecast, // Formatted dynamic predictive data for front-end view card
+          forecast,
         },
         activeAlerts: agent.alerts,
+        // NEW: Payload for the Agent's frontend charts
+        chartData: {
+          dailyStats: {
+            totalCashIn,
+            totalCashOut,
+            netFlow: totalCashOut - totalCashIn // Positive means losing physical cash
+          },
+          recentTransactions: chartDataFormatted
+        }
       },
       'Agent status retrieved.'
     );

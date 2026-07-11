@@ -33,9 +33,8 @@ function computeRiskStatus(findings) {
   return 'WARNING';
 }
 
-// UPDATE: Added 'DATA_INCONSISTENCY' to the allowed enum
 const requestSchema = z.object({
-  scenarioType: z.enum(['HIDDEN_SHORTAGE', 'HIGH_VELOCITY', 'DATA_INCONSISTENCY']),
+  scenarioType: z.enum(['HIDDEN_SHORTAGE', 'HIGH_VELOCITY', 'DATA_INCONSISTENCY','PHYSICAL_CASH_EXHAUSTION']),
   agentId: z.string().min(1, 'agentId is required'),
   targetProviderId: z.string().min(1, 'targetProviderId is required'),
   seed: z.number().int().optional(),

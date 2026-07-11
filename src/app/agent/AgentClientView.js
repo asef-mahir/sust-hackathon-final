@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Wallet, AlertTriangle, ShieldAlert, CheckCircle, Loader2, RefreshCw, CalendarDays } from 'lucide-react';
+import { Wallet, AlertTriangle, ShieldAlert, CheckCircle, Loader2, RefreshCw, CalendarDays, TrendingUp, TrendingDown } from 'lucide-react';
+import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { toast } from 'sonner';
 
 const STORAGE_KEY = 'preferredExplanationLanguage';
 
-// Scalable dictionary mapping for the various system alerts to protect provider boundaries
 const ALERT_TITLES = {
   HIDDEN_SHORTAGE: {
     en: 'Liquidity Warning',
@@ -35,10 +35,6 @@ export default function AgentClientView({ agentId }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(null);
   const [langPreference, setLangPreference] = useState('en');
-
-  // Tracks which alert IDs have already been seen, so polling only pops up
-  // a notification for genuinely new inbox items — never for the initial
-  // load, and never re-announces one already shown.
   const seenAlertIdsRef = useRef(null);
 
   const fetchAgentData = async ({ silent = false } = {}) => {
@@ -51,7 +47,6 @@ export default function AgentClientView({ agentId }) {
         const incomingAlerts = json.data.activeAlerts ?? [];
 
         if (seenAlertIdsRef.current === null) {
-          // First load: just record what's already there, don't announce it.
           seenAlertIdsRef.current = new Set(incomingAlerts.map((a) => a.id));
         } else {
           const newOnes = incomingAlerts.filter((a) => !seenAlertIdsRef.current.has(a.id));
@@ -79,7 +74,6 @@ export default function AgentClientView({ agentId }) {
     seenAlertIdsRef.current = null;
     fetchAgentData();
 
-    // Pull local fallback storage preference configuration for client view
     if (typeof window !== 'undefined') {
       const stored = window.localStorage.getItem(STORAGE_KEY);
       if (stored) {
@@ -88,8 +82,6 @@ export default function AgentClientView({ agentId }) {
     }
   }, [agentId]);
 
-  // Poll for new advisory-inbox items so the agent gets a popup the moment
-  // something new arrives, without needing to hit "Sync Balances" manually.
   useEffect(() => {
     const interval = setInterval(() => {
       fetchAgentData({ silent: true });
@@ -134,58 +126,69 @@ export default function AgentClientView({ agentId }) {
 
   if (!data) return null;
 
-  const { agent, liquidity, activeAlerts } = data;
+  const { agent, liquidity, activeAlerts, chartData } = data;
+  const isPhysicalRisk = liquidity.forecast?.primaryRiskVector === 'PHYSICAL_CASH';
+  const targetProvider = liquidity.forecast?.providerCode || 'E-Money';
+
+  // Format chart data for Recharts
+  const formattedChartData = [...(chartData?.recentTransactions || [])].reverse().map(tx => ({
+    ...tx,
+    timeLabel: new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }));
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-8 animate-in fade-in duration-500 pb-10">
       
       {/* Header Container */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-5">
+      <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-200 pb-5 gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
             {agent.name}
           </h1>
-          <p className="mt-1 flex items-center gap-2 text-sm text-slate-500">
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
             <span>Outlet Code: {agent.outletCode}</span>
-            <span className="h-1 w-1 rounded-full bg-slate-300"></span>
+            <span className="hidden md:inline h-1 w-1 rounded-full bg-slate-300"></span>
+            {/* Displaying Area ID as requested to show location context */}
+            <span className="font-medium bg-slate-100 px-2 py-0.5 rounded text-slate-600">Area Ref: {agent.areaId.slice(-6).toUpperCase()}</span>
+            <span className="hidden md:inline h-1 w-1 rounded-full bg-slate-300"></span>
             <span className={`font-semibold ${agent.riskStatus === 'CRITICAL' || agent.riskStatus === 'WARNING' ? 'text-amber-600' : 'text-emerald-600'}`}>
-              Risk Level: {agent.riskStatus}
+              Status: {agent.riskStatus}
             </span>
           </p>
         </div>
         <button 
           onClick={fetchAgentData}
-          className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition-all hover:bg-slate-50 hover:text-slate-900"
+          className="flex w-full md:w-auto items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition-all hover:bg-slate-50 hover:text-slate-900"
         >
           <RefreshCw className="h-4 w-4" />
           Sync Balances
         </button>
       </div>
 
-      {/* Dynamic Cash Demand Forecast Banner Component */}
+      {/* Dynamic Cash Demand Forecast Banner */}
       {liquidity.forecast && (
-        <div className="flex flex-col rounded-xl border border-blue-200 bg-blue-50 p-5 shadow-sm border-l-4 border-l-blue-500">
-          <div className="flex items-center gap-3 text-blue-700 mb-2">
+        <div className={`flex flex-col rounded-xl border p-5 shadow-sm border-l-4 ${isPhysicalRisk ? 'bg-emerald-50 border-emerald-500 border-emerald-200' : 'bg-blue-50 border-blue-500 border-blue-200'}`}>
+          <div className={`flex items-center gap-3 mb-2 ${isPhysicalRisk ? 'text-emerald-700' : 'text-blue-700'}`}>
             <CalendarDays className="h-5 w-5" />
-            <h3 className="font-bold uppercase tracking-wide text-xs">AI Liquidity Requirements Forecast</h3>
+            <h3 className="font-bold uppercase tracking-wide text-xs">AI Liquidity Forecast</h3>
           </div>
           <p className="text-sm text-slate-700 leading-relaxed">
             {langPreference === 'bn' ? (
               <>
-                লেনদেনের বর্তমান গতি অনুযায়ী, আপনার ব্যবসা সচল রাখতে আজ বিকেল <span className="font-bold text-blue-900 text-base">{liquidity.forecast.criticalTime}</span> টার মধ্যে আনুমানিক <span className="font-bold text-blue-900 text-base">৳{liquidity.forecast.requiredAmount.toLocaleString()}</span> ক্যাশ টাকার প্রয়োজন হতে পারে।
+                লেনদেনের বর্তমান গতি অনুযায়ী, আপনার ব্যবসা সচল রাখতে আজ বিকেল <span className="font-bold text-slate-900 text-base">{liquidity.forecast.criticalTime}</span> টার মধ্যে আনুমানিক <span className="font-bold text-slate-900 text-base">৳{liquidity.forecast.requiredAmount.toLocaleString()}</span> {isPhysicalRisk ? 'ক্যাশ টাকার' : `${targetProvider} ই-মানি`} প্রয়োজন হতে পারে।
               </>
             ) : langPreference === 'banglish' ? (
               <>
-                Apnar current transaction velocity onuzayi, counter chalu rakhte ajke <span className="font-bold text-blue-900 text-base">{liquidity.forecast.criticalTime}</span> er moddhe pray <span className="font-bold text-blue-900 text-base">৳{liquidity.forecast.requiredAmount.toLocaleString()}</span> physical cash proyojon hote pare.
+                Apnar current transaction velocity onuzayi, counter chalu rakhte ajke <span className="font-bold text-slate-900 text-base">{liquidity.forecast.criticalTime}</span> er moddhe pray <span className="font-bold text-slate-900 text-base">৳{liquidity.forecast.requiredAmount.toLocaleString()}</span> {isPhysicalRisk ? 'physical cash' : `${targetProvider} e-money`} proyojon hote pare.
               </>
             ) : (
               <>
-                Based on current velocity patterns, you will require approximately <span className="font-bold text-blue-900 text-base">৳{liquidity.forecast.requiredAmount.toLocaleString()}</span> in physical cash reserves by <span className="font-bold text-blue-900 text-base">{liquidity.forecast.criticalTime}</span> today to guarantee uninterrupted service.
+                Based on current velocity patterns, you will require approximately <span className="font-bold text-slate-900 text-base">৳{liquidity.forecast.requiredAmount.toLocaleString()}</span> in {isPhysicalRisk ? 'Physical Cash' : `${targetProvider} E-Money`} by <span className="font-bold text-slate-900 text-base">{liquidity.forecast.criticalTime}</span> today to guarantee uninterrupted service.
               </>
             )}
           </p>
-          <div className="flex gap-3 mt-3">
-            <span className="text-xs bg-blue-100 text-blue-800 font-medium px-2.5 py-1 rounded-md">
+          <div className="flex flex-wrap gap-3 mt-3">
+            <span className={`text-xs font-medium px-2.5 py-1 rounded-md ${isPhysicalRisk ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>
               Burn Rate: ৳{liquidity.forecast.hourlyBurnRate.toLocaleString()}/hr
             </span>
             <span className="text-xs bg-amber-100 text-amber-800 font-medium px-2.5 py-1 rounded-md">
@@ -195,9 +198,9 @@ export default function AgentClientView({ agentId }) {
         </div>
       )}
 
-      {/* Unified Liquidity Balances View Layout */}
+      {/* Unified Liquidity Balances */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        {/* Physical Cash Reserves (Shared Drawer Pool) */}
+        {/* Physical Cash */}
         <div className="flex flex-col rounded-xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm md:col-span-1">
           <div className="mb-4 flex items-center gap-3 text-emerald-700">
             <Wallet className="h-6 w-6" />
@@ -206,10 +209,10 @@ export default function AgentClientView({ agentId }) {
           <span className="text-3xl font-extrabold text-emerald-900">
             ৳{parseFloat(agent.physicalCash).toLocaleString()}
           </span>
-          <span className="mt-2 text-xs font-medium text-emerald-600">Shared Shop Counter Drawer</span>
+          <span className="mt-2 text-xs font-medium text-emerald-600">Shared Drawer Pool</span>
         </div>
 
-        {/* MFS E-Money Provider Separate Context Wallets */}
+        {/* E-Money Providers */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 md:col-span-3">
           {liquidity.providerBalances.map((provider) => {
             const isLow = provider.shareOfTotal < 0.10;
@@ -230,13 +233,57 @@ export default function AgentClientView({ agentId }) {
                   ৳{parseFloat(provider.balance).toLocaleString()}
                 </span>
                 <span className={`mt-2 text-xs font-medium ${isLow ? 'text-amber-600' : 'text-slate-400'}`}>
-                  {(provider.shareOfTotal * 100).toFixed(1)}% of Electronic Mix
+                  {(provider.shareOfTotal * 100).toFixed(1)}% of E-Money
                 </span>
               </div>
             );
           })}
         </div>
       </div>
+
+      {/* NEW: Transaction Volume Chart Section */}
+      {chartData && formattedChartData.length > 0 && (
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500">
+              Recent Volume Trend
+            </h2>
+            <div className="flex gap-4 text-sm font-medium">
+              <span className="flex items-center gap-1 text-blue-600"><TrendingDown className="h-4 w-4"/> In: ৳{chartData.dailyStats.totalCashIn.toLocaleString()}</span>
+              <span className="flex items-center gap-1 text-emerald-600"><TrendingUp className="h-4 w-4"/> Out: ৳{chartData.dailyStats.totalCashOut.toLocaleString()}</span>
+            </div>
+          </div>
+          
+          <div className="h-48 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={formattedChartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                <XAxis dataKey="timeLabel" tick={{fontSize: 10}} tickMargin={10} minTickGap={30} stroke="#94a3b8" />
+                <Tooltip 
+                  cursor={{fill: '#f1f5f9'}}
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload;
+                      return (
+                        <div className="bg-slate-900 text-white text-xs p-2 rounded shadow-lg">
+                          <p className="font-semibold">{data.timeLabel}</p>
+                          <p>{data.providerCode} {data.type}</p>
+                          <p className="text-sm font-bold mt-1">৳{data.amount.toLocaleString()}</p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }} 
+                />
+                <Bar dataKey="amount" radius={[4, 4, 0, 0]} maxBarSize={40}>
+                  {formattedChartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.type === 'CASH_IN' ? '#3b82f6' : '#10b981'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Contextual Advisory Inbox Workflow Stream */}
       <div>
@@ -253,8 +300,6 @@ export default function AgentClientView({ agentId }) {
           <div className="grid gap-4">
             {activeAlerts.map((alert) => {
               const currentLang = langPreference;
-              
-              // Safe contextual evaluation extracting localized string targets from dynamic JSON structure
               const fallbackText = alert.evidence?.confidenceReason || 'System alert processing context required.';
               const displayReason = alert.explanations?.[currentLang]?.reason || fallbackText;
               const displayNextStep = alert.explanations?.[currentLang]?.nextStep || 'Verify current balance directly with team operations.';

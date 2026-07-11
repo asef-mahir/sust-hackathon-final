@@ -32,6 +32,7 @@ enum ScenarioType {
   HIDDEN_SHORTAGE
   HIGH_VELOCITY
   DATA_INCONSISTENCY
+  PHYSICAL_CASH_EXHAUSTION
   COORDINATED_CLOSURE
 }
 
@@ -58,10 +59,19 @@ enum AlertSource {
 // Core entities
 // ---------------------------------------------------------------------------
 
+// 1. Add this enum at the top with your other enums
+enum AreaProfile {
+  CASH_IN_DOMINANT
+  CASH_OUT_DOMINANT
+  BALANCED
+}
+
+// 2. Replace your existing Area model with this updated version
 model Area {
-  id     String  @id @default(cuid())
-  name   String  @unique
-  agents Agent[]
+  id      String      @id @default(cuid())
+  name    String      @unique
+  profile AreaProfile @default(BALANCED) // New classification field
+  agents  Agent[]
 }
 
 model Provider {

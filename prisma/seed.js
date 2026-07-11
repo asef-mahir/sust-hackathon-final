@@ -14,7 +14,6 @@ const supabase = createClient(
   }
 );
 
-// Helper to generate a random number within a range
 const randomBetween = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
 async function createAuthUser(email, password, name) {
@@ -54,10 +53,11 @@ async function main() {
   const riskId = await createAuthUser('risk@finstream.com', 'demo12345', 'Nadia Chowdhury');
   const agentId = await createAuthUser('agent@finstream.com', 'demo12345', 'Sohrab Hossain');
 
-  console.log('🌱 Seeding Reference Areas...');
-  const zindabazar = await prisma.area.create({ data: { name: 'Sylhet_Zindabazar' } });
-  const bandarbazar = await prisma.area.create({ data: { name: 'Sylhet_Bandarbazar' } });
-  const subidbazar = await prisma.area.create({ data: { name: 'Sylhet_Subidbazar' } });
+  console.log('🌱 Seeding Reference Areas with Diverse Profiles...');
+  // UPDATED: Diverse Area Profiles for testing dynamic rule engine thresholds
+  const zindabazar = await prisma.area.create({ data: { name: 'Sylhet_Zindabazar', profile: 'BALANCED' } });
+  const bandarbazar = await prisma.area.create({ data: { name: 'Sylhet_Bandarbazar', profile: 'CASH_IN_DOMINANT' } });
+  const subidbazar = await prisma.area.create({ data: { name: 'Sylhet_Subidbazar', profile: 'CASH_OUT_DOMINANT' } });
 
   console.log('🌱 Seeding MFS Providers...');
   const bkash = await prisma.provider.create({ data: { code: 'BKASH', name: 'bKash Limited' } });
@@ -70,7 +70,7 @@ async function main() {
       data: {
         name: 'Zindabazar Digital Telecom',
         outletCode: 'OUTLET-77102',
-        areaId: zindabazar.id,
+        areaId: zindabazar.id, // BALANCED
         physicalCash: 150000.00,
         riskStatus: 'SAFE'
       }
@@ -79,16 +79,16 @@ async function main() {
       data: {
         name: 'Mizan MFS Point (Demo Target)',
         outletCode: 'OUTLET-102',
-        areaId: zindabazar.id,
+        areaId: zindabazar.id, // BALANCED
         physicalCash: 120000.00,
-        riskStatus: 'SAFE' // Starts safe, will turn WARNING/CRITICAL during live demo
+        riskStatus: 'SAFE'
       }
     }),
     prisma.agent.create({
       data: {
         name: 'Bandarbazar Enterprise',
         outletCode: 'OUTLET-99213',
-        areaId: bandarbazar.id,
+        areaId: bandarbazar.id, // CASH_IN_DOMINANT
         physicalCash: 250000.00,
         riskStatus: 'SAFE'
       }
@@ -97,7 +97,7 @@ async function main() {
       data: {
         name: 'Chowdhury Traders',
         outletCode: 'OUTLET-44811',
-        areaId: subidbazar.id,
+        areaId: subidbazar.id, // CASH_OUT_DOMINANT
         physicalCash: 15000.00,
         riskStatus: 'SAFE'
       }
@@ -122,7 +122,6 @@ async function main() {
       { agentId: agentNormal.id, providerId: nagad.id, balance: 60000.00, minimumThreshold: 10000 },
       { agentId: agentNormal.id, providerId: rocket.id, balance: 40000.00, minimumThreshold: 10000 },
 
-      // Vulnerable Agent is primed for Scenario A (bKash is dangerously low compared to others)
       { agentId: agentVulnerable.id, providerId: bkash.id, balance: 8000.00, minimumThreshold: 15000 },
       { agentId: agentVulnerable.id, providerId: nagad.id, balance: 80000.00, minimumThreshold: 15000 },
       { agentId: agentVulnerable.id, providerId: rocket.id, balance: 60000.00, minimumThreshold: 15000 },
@@ -137,24 +136,27 @@ async function main() {
     ],
   });
 
-  console.log('⏳ Generating 2,400 Historical Transactions (Background Noise)...');
+  console.log('⏳ Generating 2,400 Historical Transactions Contextually...');
   const txData = [];
   const providers = [bkash, nagad, rocket];
   const now = new Date().getTime();
   
-  // 48 hours ago in milliseconds
   const fortyEightHoursAgo = now - 48 * 60 * 60 * 1000;
-  // 15 minutes ago (Creates a "clean runway" for live anomalies)
   const fifteenMinutesAgo = now - 15 * 60 * 1000;
 
   agents.forEach(agent => {
-    // ~600 transactions per agent
+    // UPDATED: Determine realistic Cash-In probability based on the Agent's Area Profile
+    let cashInProbability = 0.50; // Default BALANCED
+    if (agent.areaId === bandarbazar.id) cashInProbability = 0.75; // CASH_IN_DOMINANT
+    if (agent.areaId === subidbazar.id) cashInProbability = 0.25;  // CASH_OUT_DOMINANT
+
     for (let i = 0; i < 600; i++) {
       const provider = providers[Math.floor(Math.random() * providers.length)];
-      const type = Math.random() > 0.6 ? 'CASH_IN' : 'CASH_OUT'; // Bias slightly towards cash_out
-      const amount = randomBetween(500, 8000); // Standard safe amounts
       
-      // Random timestamp strictly between 48 hours ago and 15 mins ago
+      // Transaction type respects the geographic profile
+      const type = Math.random() < cashInProbability ? 'CASH_IN' : 'CASH_OUT'; 
+      const amount = randomBetween(500, 8000); 
+      
       const randomTimestamp = new Date(randomBetween(fortyEightHoursAgo, fifteenMinutesAgo));
 
       txData.push({
@@ -168,7 +170,6 @@ async function main() {
     }
   });
 
-  // Prisma createMany is fast, but inserting in chunks of 1000 avoids memory/timeout limits on free databases
   console.log('💾 Writing transactions to database...');
   const chunkSize = 1000;
   for (let i = 0; i < txData.length; i += chunkSize) {
@@ -177,7 +178,7 @@ async function main() {
     console.log(`   Written chunk ${Math.floor(i / chunkSize) + 1}/${Math.ceil(txData.length / chunkSize)}`);
   }
 
-  console.log('🌱 Seeding Past Resolved Alerts (For Dashboard History)...');
+  console.log('🌱 Seeding Past Resolved Alerts...');
   const pastAlert = await prisma.alert.create({
     data: {
       agentId: agentBusy.id,
@@ -212,14 +213,6 @@ async function main() {
 
   console.log(`
   ✨ Database & Auth Successfully Seeded! ✨
-  --------------------------------------------------
-  Agents     : 4 Active Shops 
-  Transactions: ${txData.length} baseline records (48h timeframe)
-  Clean Zone : Last 15 minutes left empty for live simulation
-  Alerts     : 1 Past Resolved case (History view ready)
-  Auth       : Ops, Risk, and Agent credentials ready
-  --------------------------------------------------
-  ✅ Ready for presentation! Open dashboard and hit "Inject Scenario".
   `);
 }
 
