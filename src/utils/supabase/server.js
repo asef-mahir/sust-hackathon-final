@@ -17,7 +17,12 @@ export const createServerClient = async () => {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
+              cookieStore.set(name, value, {
+                ...options,
+                // FORCE THE BROWSER TO KEEP THE COOKIE FOR 7 DAYS
+                maxAge: 60 * 60 * 24 * 7, 
+                path: '/',
+              })
             );
           } catch (error) {
             // The setAll method was called from a Server Component.

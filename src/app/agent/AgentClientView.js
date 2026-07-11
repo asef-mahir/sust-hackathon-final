@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Wallet, AlertTriangle, ShieldAlert, CheckCircle, Loader2, RefreshCw, CalendarDays, TrendingUp, TrendingDown } from 'lucide-react';
+import { Wallet, AlertTriangle, ShieldAlert, CheckCircle, Loader2, RefreshCw, CalendarDays, TrendingUp, TrendingDown, X } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { toast } from 'sonner';
 
@@ -35,6 +35,9 @@ export default function AgentClientView({ agentId }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(null);
   const [langPreference, setLangPreference] = useState('en');
+  
+  // NEW: State to control the active popup modal
+  const [popupAlert, setPopupAlert] = useState(null);
   const seenAlertIdsRef = useRef(null);
 
   const fetchAgentData = async ({ silent = false } = {}) => {
@@ -50,13 +53,19 @@ export default function AgentClientView({ agentId }) {
           seenAlertIdsRef.current = new Set(incomingAlerts.map((a) => a.id));
         } else {
           const newOnes = incomingAlerts.filter((a) => !seenAlertIdsRef.current.has(a.id));
-          for (const alert of newOnes) {
-            toast.warning('New advisory in your inbox', {
-              description: alert.confidenceReason || `${alert.scenarioType} flagged for review.`,
-              duration: 8000,
-            });
+          
+          if (newOnes.length > 0) {
+            // Pop open the modal for the most recent critical alert
+            setPopupAlert(newOnes[0]);
+            
+            for (const alert of newOnes) {
+              toast.warning('New advisory in your inbox', {
+                description: alert.confidenceReason || `${alert.scenarioType} flagged for review.`,
+                duration: 8000,
+              });
+            }
+            seenAlertIdsRef.current = new Set(incomingAlerts.map((a) => a.id));
           }
-          seenAlertIdsRef.current = new Set(incomingAlerts.map((a) => a.id));
         }
 
         setData(json.data);
@@ -89,23 +98,26 @@ export default function AgentClientView({ agentId }) {
     return () => clearInterval(interval);
   }, [agentId]);
 
-  const handleAcknowledge = async (alertId) => {
-    setIsProcessing(alertId);
+  const handleModalAcknowledge = async () => {
+    if (!popupAlert) return;
+    
+    setIsProcessing(popupAlert.id);
     try {
-      const res = await fetch(`/api/alerts/${alertId}/actions`, {
+      const res = await fetch(`/api/alerts/${popupAlert.id}/actions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'ACKNOWLEDGE',
-          note: 'Agent acknowledged the warning from the localized client dashboard.',
+          note: 'Agent acknowledged the warning via popup modal.',
         }),
       });
 
       const json = await res.json();
 
       if (res.ok && json.success) {
-        toast.success('Alert acknowledged successfully.');
-        fetchAgentData(); 
+        toast.success('Alert acknowledged.');
+        setPopupAlert(null); // Close the modal
+        fetchAgentData({ silent: true }); 
       } else {
         toast.error(json.message || 'Failed to acknowledge alert.');
       }
@@ -130,7 +142,6 @@ export default function AgentClientView({ agentId }) {
   const isPhysicalRisk = liquidity.forecast?.primaryRiskVector === 'PHYSICAL_CASH';
   const targetProvider = liquidity.forecast?.providerCode || 'E-Money';
 
-  // Format chart data for Recharts
   const formattedChartData = [...(chartData?.recentTransactions || [])].reverse().map(tx => ({
     ...tx,
     timeLabel: new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -148,7 +159,6 @@ export default function AgentClientView({ agentId }) {
           <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
             <span>Outlet Code: {agent.outletCode}</span>
             <span className="hidden md:inline h-1 w-1 rounded-full bg-slate-300"></span>
-            {/* Displaying Area ID as requested to show location context */}
             <span className="font-medium bg-slate-100 px-2 py-0.5 rounded text-slate-600">Area Ref: {agent.areaId.slice(-6).toUpperCase()}</span>
             <span className="hidden md:inline h-1 w-1 rounded-full bg-slate-300"></span>
             <span className={`font-semibold ${agent.riskStatus === 'CRITICAL' || agent.riskStatus === 'WARNING' ? 'text-amber-600' : 'text-emerald-600'}`}>
@@ -157,7 +167,7 @@ export default function AgentClientView({ agentId }) {
           </p>
         </div>
         <button 
-          onClick={fetchAgentData}
+          onClick={() => fetchAgentData()}
           className="flex w-full md:w-auto items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition-all hover:bg-slate-50 hover:text-slate-900"
         >
           <RefreshCw className="h-4 w-4" />
@@ -200,7 +210,6 @@ export default function AgentClientView({ agentId }) {
 
       {/* Unified Liquidity Balances */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        {/* Physical Cash */}
         <div className="flex flex-col rounded-xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm md:col-span-1">
           <div className="mb-4 flex items-center gap-3 text-emerald-700">
             <Wallet className="h-6 w-6" />
@@ -212,7 +221,6 @@ export default function AgentClientView({ agentId }) {
           <span className="mt-2 text-xs font-medium text-emerald-600">Shared Drawer Pool</span>
         </div>
 
-        {/* E-Money Providers */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 md:col-span-3">
           {liquidity.providerBalances.map((provider) => {
             const isLow = provider.shareOfTotal < 0.10;
@@ -241,7 +249,7 @@ export default function AgentClientView({ agentId }) {
         </div>
       </div>
 
-      {/* NEW: Transaction Volume Chart Section */}
+      {/* Transaction Volume Chart Section */}
       {chartData && formattedChartData.length > 0 && (
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between mb-6">
@@ -285,7 +293,7 @@ export default function AgentClientView({ agentId }) {
         </div>
       )}
 
-      {/* Contextual Advisory Inbox Workflow Stream */}
+      {/* Clean Read-Only Advisory Inbox */}
       <div>
         <h2 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-500">
           Agent Advisory Inbox
@@ -302,50 +310,27 @@ export default function AgentClientView({ agentId }) {
               const currentLang = langPreference;
               const fallbackText = alert.evidence?.confidenceReason || 'System alert processing context required.';
               const displayReason = alert.explanations?.[currentLang]?.reason || fallbackText;
-              const displayNextStep = alert.explanations?.[currentLang]?.nextStep || 'Verify current balance directly with team operations.';
               const displayTitle = ALERT_TITLES[alert.scenarioType]?.[currentLang] || ALERT_TITLES[alert.scenarioType]?.en || 'System Alert';
 
               return (
                 <div 
                   key={alert.id} 
-                  className={`flex flex-col justify-between gap-4 rounded-xl border p-5 shadow-sm md:flex-row md:items-center ${
+                  className={`flex flex-col gap-4 rounded-xl border p-5 shadow-sm md:flex-row md:items-center ${
                     alert.confidence === 'HIGH' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'
                   }`}
                 >
-                  <div className="flex items-start gap-4 md:items-center">
-                    <div className={`mt-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full ${
-                      alert.confidence === 'HIGH' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'
-                    }`}>
-                      {alert.confidence === 'HIGH' ? <ShieldAlert className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
-                    </div>
-                    <div>
-                      <h3 className={`font-bold ${alert.confidence === 'HIGH' ? 'text-red-900' : 'text-amber-900'}`}>
-                        {displayTitle}
-                      </h3>
-                      <p className={`mt-1 text-sm leading-relaxed ${alert.confidence === 'HIGH' ? 'text-red-700' : 'text-amber-800'}`}>
-                        {displayReason}
-                      </p>
-                      <p className="mt-2 text-xs font-semibold text-slate-600">
-                        {currentLang === 'bn' ? 'প্রস্তাবিত পদক্ষেপ: ' : currentLang === 'banglish' ? 'Next step: ' : 'Recommended Action: '}
-                        <span className="font-normal text-slate-500">{displayNextStep}</span>
-                      </p>
-                    </div>
+                  <div className={`mt-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full ${
+                    alert.confidence === 'HIGH' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'
+                  }`}>
+                    {alert.confidence === 'HIGH' ? <ShieldAlert className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
                   </div>
-
-                  <div className="flex flex-col gap-2 sm:flex-row md:items-center">
-                    {alert.status === 'PENDING' && (
-                      <button
-                        onClick={() => handleAcknowledge(alert.id)}
-                        disabled={isProcessing === alert.id}
-                        className="inline-flex items-center justify-center whitespace-nowrap rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-cyan-700 disabled:opacity-50"
-                      >
-                        {isProcessing === alert.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Acknowledge
-                      </button>
-                    )}
-                    <button className="inline-flex items-center justify-center whitespace-nowrap rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:bg-slate-50">
-                      Request Refill
-                    </button>
+                  <div>
+                    <h3 className={`font-bold ${alert.confidence === 'HIGH' ? 'text-red-900' : 'text-amber-900'}`}>
+                      {displayTitle}
+                    </h3>
+                    <p className={`mt-1 text-sm leading-relaxed ${alert.confidence === 'HIGH' ? 'text-red-700' : 'text-amber-800'}`}>
+                      {displayReason}
+                    </p>
                   </div>
                 </div>
               );
@@ -353,6 +338,67 @@ export default function AgentClientView({ agentId }) {
           </div>
         )}
       </div>
+
+      {/* NEW: Full Screen Critical Alert Modal */}
+      {popupAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-in zoom-in-95 duration-200">
+            
+            {/* Modal Header */}
+            <div className={`flex items-center justify-between px-6 py-4 border-b ${popupAlert.confidence === 'HIGH' ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'}`}>
+              <div className="flex items-center gap-3">
+                <div className={`flex h-10 w-10 items-center justify-center rounded-full ${popupAlert.confidence === 'HIGH' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
+                  {popupAlert.confidence === 'HIGH' ? <ShieldAlert className="h-6 w-6" /> : <AlertTriangle className="h-6 w-6" />}
+                </div>
+                <h2 className={`text-lg font-bold ${popupAlert.confidence === 'HIGH' ? 'text-red-900' : 'text-amber-900'}`}>
+                  {ALERT_TITLES[popupAlert.scenarioType]?.[langPreference] || ALERT_TITLES[popupAlert.scenarioType]?.en}
+                </h2>
+              </div>
+              <button 
+                onClick={() => setPopupAlert(null)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6">
+              <p className="text-base text-slate-700 leading-relaxed">
+                {popupAlert.explanations?.[langPreference]?.reason || popupAlert.evidence?.confidenceReason}
+              </p>
+              
+              <div className="mt-6 rounded-lg bg-slate-50 p-4 border border-slate-100">
+                <p className="text-sm font-semibold text-slate-800 mb-1">
+                  {langPreference === 'bn' ? 'প্রস্তাবিত পদক্ষেপ:' : langPreference === 'banglish' ? 'Next step:' : 'Recommended Action:'}
+                </p>
+                <p className="text-sm text-slate-600">
+                  {popupAlert.explanations?.[langPreference]?.nextStep || 'Verify current balance directly with team operations.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+              <button 
+                onClick={() => setPopupAlert(null)}
+                className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+              >
+                Remind Me Later
+              </button>
+              <button
+                onClick={handleModalAcknowledge}
+                disabled={isProcessing === popupAlert.id}
+                className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700 disabled:opacity-50"
+              >
+                {isProcessing === popupAlert.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Acknowledge Alert
+              </button>
+            </div>
+            
+          </div>
+        </div>
+      )}
 
     </div>
   );
