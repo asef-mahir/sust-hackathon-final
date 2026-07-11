@@ -24,6 +24,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "prisma": "^6.19.3",
+    "sonarqube-scanner": "^4.3.8",
     "tailwindcss": "^4"
   },
   "prisma": {
