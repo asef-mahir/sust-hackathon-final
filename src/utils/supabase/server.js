@@ -1,29 +1,27 @@
 import { createServerClient as createSupabaseServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
-export const createServerClient = () => {
-  const cookieStore = cookies();
+export const createServerClient = async () => {
+  // 1. Await the cookies object (Next.js 15+ requirement)
+  const cookieStore = await cookies();
 
   return createSupabaseServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     {
       cookies: {
-        get(name) {
-          return cookieStore.get(name)?.value;
+        // 2. Use the new getAll and setAll methods (Supabase requirement)
+        getAll() {
+          return cookieStore.getAll();
         },
-        set(name, value, options) {
+        setAll(cookiesToSet) {
           try {
-            cookieStore.set({ name, value, ...options });
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
           } catch (error) {
-            // The request was a Server Component; mutate downstream cookies via middleware
-          }
-        },
-        remove(name, options) {
-          try {
-            cookieStore.delete({ name, ...options });
-          } catch (error) {
-            // The request was a Server Component; mutate downstream cookies via middleware
+            // The setAll method was called from a Server Component.
+            // This can be ignored if you have middleware refreshing user sessions.
           }
         },
       },

@@ -1,11 +1,11 @@
-import { createClient } from '@/utils/supabase/server';
+import { createServerClient } from '@/utils/supabase/server';
 import { prisma } from '@/lib/prisma';
 
 /**
  * @returns {Promise<Object | null>} the Owner row, or null if unauthenticated
  */
 export async function getSessionOwner() {
-  const supabase = await createClient();
+  const supabase = await createServerClient();
 
   const {
     data: { user },

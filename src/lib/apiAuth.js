@@ -1,5 +1,5 @@
-import { createClient } from '../utils/supabase/server';
-import { prisma } from './prisma';
+import { createServerClient } from '@/utils/supabase/server';
+import { prisma } from '@/lib/prisma';
 
 /**
  * @typedef {Object} AuthResult
@@ -18,7 +18,7 @@ import { prisma } from './prisma';
  * @returns {Promise<AuthResult>}
  */
 export async function requireRole(allowedRoles) {
-  const supabase = await createClient();
+  const supabase = await createServerClient();
 
   const {
     data: { user },
@@ -61,7 +61,7 @@ export async function requireRole(allowedRoles) {
  * @returns {Promise<AuthResult>}
  */
 export async function requireAuth() {
-  const supabase = await createClient();
+  const supabase = await createServerClient();
 
   const {
     data: { user },
