@@ -3,7 +3,6 @@ import { prisma } from '../../lib/prisma';
 const HIDDEN_SHORTAGE_PROVIDER_SHARE_THRESHOLD = 0.10;
 const HIDDEN_SHORTAGE_HIGH_CONFIDENCE_SHARE = 0.05;
 const MIN_HEALTHY_TOTAL_LIQUIDITY = 20000;
-/** Horizon the top-up recommendation is sized against ("survive N more hours at this burn rate"). */
 const TARGET_SURVIVAL_HOURS = 4;
 const VELOCITY_WINDOW_MINUTES = 15;
 const VELOCITY_TRANSACTION_COUNT_THRESHOLD = 5;
@@ -14,6 +13,39 @@ const CONFIDENCE_RANK = { LOW: 0, MEDIUM: 1, HIGH: 2 };
 function downgradeConfidence(level) {
   if (level === 'HIGH') return 'MEDIUM';
   return 'LOW';
+}
+
+// NEW RULE: Immediately flag any negative balances
+async function negativeBalanceRule(agentId) {
+  const agent = await prisma.agent.findUnique({
+    where: { id: agentId },
+    include: { balances: { include: { provider: true } } },
+  });
+
+  if (!agent) return null;
+
+  const negativeProviders = agent.balances.filter(b => b.balance.toNumber() < 0);
+
+  if (negativeProviders.length > 0) {
+    return {
+      scenarioType: 'NEGATIVE_BALANCE',
+      agentId,
+      providerId: negativeProviders[0].providerId, // Attach to the first negative provider
+      confidence: 'HIGH',
+      confidenceReason: `Critical negative balance detected in ${negativeProviders.map(p => p.provider.name).join(', ')}.`,
+      targetStakeholder: 'OPERATIONS_TEAM',
+      recommendedAction: 'Halt automated operations and manually reconcile ledger immediately.',
+      evidence: {
+        negativeBalances: negativeProviders.map(p => ({
+          providerName: p.provider.name,
+          providerCode: p.provider.code,
+          balance: p.balance.toNumber()
+        }))
+      }
+    };
+  }
+
+  return null;
 }
 
 async function hiddenShortageRule(agentId) {
@@ -47,25 +79,15 @@ async function hiddenShortageRule(agentId) {
 
   if (!thinnest) return null;
 
-  // Predictive element: Calculate burn rate over the last 2 hours
   const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
   const recentCashOuts = await prisma.transaction.findMany({
     where: { agentId, providerId: thinnest.providerId, type: 'CASH_OUT', timestamp: { gte: twoHoursAgo } }
   });
   
   const hourlyBurnRate = recentCashOuts.reduce((sum, t) => sum + t.amount.toNumber(), 0) / 2;
-
-  // Defensive clamp: a provider's e-money balance can't realistically go
-  // negative. Repeated test/demo simulations against the same agent can
-  // drive the raw stored balance below zero; treat it as fully depleted
-  // (0) for this recommendation's math rather than producing a
-  // nonsensical negative percentage or negative minutes-to-depletion.
   const safeBalance = Math.max(0, thinnest.balance);
-
   const hoursUntilDepletion = hourlyBurnRate > 0 ? (safeBalance / hourlyBurnRate) : null;
 
-  // "How much additional liquidity is required?" — sized to survive
-  // TARGET_SURVIVAL_HOURS more at the current burn rate.
   const requiredTopUp =
     hourlyBurnRate > 0
       ? Math.max(0, Math.round(hourlyBurnRate * TARGET_SURVIVAL_HOURS - safeBalance))
@@ -77,9 +99,6 @@ async function hiddenShortageRule(agentId) {
     ? `Arrange approximately ৳${requiredTopUp.toLocaleString('en-US')} in additional ${thinnest.providerCode} liquidity within the next ${TARGET_SURVIVAL_HOURS} hours to avoid service disruption.`
     : 'Contact agent to arrange immediate physical cash support or provider-specific rebalancing.';
 
-  // Same clamp applied to the displayed share, so the reason text never
-  // states a negative percentage even if the underlying test data has
-  // driven this provider's balance below zero.
   const displayShare = Math.max(0, thinnest.share);
 
   return {
@@ -142,7 +161,6 @@ async function velocityRule(agentId) {
   const currentWindowVolume = amounts.reduce((sum, a) => sum + a, 0);
   const isClustered = amounts.every((a) => Math.abs(a - mean) / mean <= AMOUNT_CLUSTER_TOLERANCE);
 
-  // Advanced False-Positive Check: Compare against 24-hour baseline moving average
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const baseline = await prisma.transaction.aggregate({
     where: { agentId, providerId: flaggedProviderId, timestamp: { gte: oneDayAgo, lt: windowStart } },
@@ -219,11 +237,12 @@ async function dataIntegrityRule(agentId) {
   return null;
 }
 
-const ANOMALY_RULES = [hiddenShortageRule, velocityRule, dataIntegrityRule];
+// Ensure negativeBalanceRule is processed first
+const ANOMALY_RULES = [negativeBalanceRule, hiddenShortageRule, velocityRule, dataIntegrityRule];
 
 export async function evaluateAgentAnomalies(agentId) {
   const results = await Promise.all(ANOMALY_RULES.map((rule) => rule(agentId)));
   return results.filter((finding) => finding !== null);
 }
 
-export { hiddenShortageRule, velocityRule, dataIntegrityRule, downgradeConfidence };
+export { negativeBalanceRule, hiddenShortageRule, velocityRule, dataIntegrityRule, downgradeConfidence };

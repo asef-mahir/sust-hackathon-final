@@ -52,7 +52,7 @@ export async function GET(request, { params }) {
       return errorResponse(`Agent not found: ${agentId}`, 404);
     }
 
-    // 2. Fetch Recent Transactions for Dashboard Graphs (NEW)
+    // 2. Fetch Recent Transactions for Dashboard Graphs
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const recentTransactions = await prisma.transaction.findMany({
       where: { 
@@ -111,55 +111,68 @@ export async function GET(request, { params }) {
           : 0,
     }));
 
-    // 4. Dynamic Predictive Cash Forecast Generation
+    // 4. Determine Banner State (Negative Checks FIRST)
     let forecast = null;
-    const hiddenShortageAlert = agent.alerts.find(a => a.scenarioType === 'HIDDEN_SHORTAGE');
-    
-    if (hiddenShortageAlert && hiddenShortageAlert.evidence) {
-      const evidenceData = typeof hiddenShortageAlert.evidence === 'string'
-        ? JSON.parse(hiddenShortageAlert.evidence)
-        : hiddenShortageAlert.evidence;
+    const negativeProviders = providerBalancesRaw.filter(p => p.balanceNumber < 0);
 
-      if (evidenceData.projectedDepletionMinutes) {
-        const criticalDate = new Date(
-          new Date(hiddenShortageAlert.createdAt).getTime() +
-          evidenceData.projectedDepletionMinutes * 60 * 1000
-        );
+    if (negativeProviders.length > 0) {
+      // Critical Error Override: Triggers the red UI banner on the frontend
+      forecast = {
+        isCriticalError: true,
+        errorType: 'NEGATIVE_BALANCE',
+        details: negativeProviders.map(p => ({
+          name: p.providerName,
+          amount: p.balanceNumber
+        }))
+      };
+    } else {
+      // Standard AI Forecast Generation (Only runs if balances are valid)
+      const hiddenShortageAlert = agent.alerts.find(a => a.scenarioType === 'HIDDEN_SHORTAGE');
+      
+      if (hiddenShortageAlert && hiddenShortageAlert.evidence) {
+        const evidenceData = typeof hiddenShortageAlert.evidence === 'string'
+          ? JSON.parse(hiddenShortageAlert.evidence)
+          : hiddenShortageAlert.evidence;
 
-        // Always format/derive against Bangladesh time (Asia/Dhaka), not the
-        // server's own timezone — this data is shown to agents in Bangladesh
-        // regardless of where the server process happens to run.
-        const criticalTime = criticalDate.toLocaleTimeString('en-US', {
-          hour: '2-digit',
-          minute: '2-digit',
-          timeZone: 'Asia/Dhaka',
-        });
-        const dhakaHour = Number(
-          criticalDate.toLocaleString('en-US', {
+        if (evidenceData.projectedDepletionMinutes) {
+          const criticalDate = new Date(
+            new Date(hiddenShortageAlert.createdAt).getTime() +
+            evidenceData.projectedDepletionMinutes * 60 * 1000
+          );
+
+          // Always format/derive against Bangladesh time (Asia/Dhaka)
+          const criticalTime = criticalDate.toLocaleTimeString('en-US', {
             hour: '2-digit',
-            hour12: false,
+            minute: '2-digit',
             timeZone: 'Asia/Dhaka',
-          })
-        );
-        // 7pm-4am is night, the rest of the day is day.
-        const periodBn = dhakaHour >= 19 || dhakaHour < 4 ? 'রাত' : 'দিন';
+          });
+          const dhakaHour = Number(
+            criticalDate.toLocaleString('en-US', {
+              hour: '2-digit',
+              hour12: false,
+              timeZone: 'Asia/Dhaka',
+            })
+          );
+          // 7pm-4am is night, the rest of the day is day.
+          const periodBn = dhakaHour >= 19 || dhakaHour < 4 ? 'রাত' : 'দিন';
 
-        // Calculate a safe buffer amount needed
-        const requiredAmount = Math.max(
-          20000,
-          Math.round((evidenceData.hourlyBurnRate || 0) * (evidenceData.projectedDepletionMinutes / 60) * 1.5)
-        );
+          // Calculate a safe buffer amount needed
+          const requiredAmount = Math.max(
+            20000,
+            Math.round((evidenceData.hourlyBurnRate || 0) * (evidenceData.projectedDepletionMinutes / 60) * 1.5)
+          );
 
-        forecast = {
-          criticalTime,
-          periodBn,
-          requiredAmount,
-          hourlyBurnRate: Math.round(evidenceData.hourlyBurnRate || 0),
-          minutesRemaining: evidenceData.projectedDepletionMinutes,
-          // NEW: Tells the frontend exactly what is running out
-          primaryRiskVector: evidenceData.primaryRiskVector || 'PROVIDER_BALANCE',
-          providerCode: evidenceData.thinProvider?.providerCode || null
-        };
+          forecast = {
+            isCriticalError: false,
+            criticalTime,
+            periodBn,
+            requiredAmount,
+            hourlyBurnRate: Math.round(evidenceData.hourlyBurnRate || 0),
+            minutesRemaining: evidenceData.projectedDepletionMinutes,
+            primaryRiskVector: evidenceData.primaryRiskVector || 'PROVIDER_BALANCE',
+            providerCode: evidenceData.thinProvider?.providerCode || null
+          };
+        }
       }
     }
 
@@ -181,7 +194,7 @@ export async function GET(request, { params }) {
           forecast,
         },
         activeAlerts: agent.alerts,
-        // NEW: Payload for the Agent's frontend charts
+        // Payload for the Agent's frontend charts
         chartData: {
           dailyStats: {
             totalCashIn,
