@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { z } from 'zod';
+import { recordAiCall } from '@/lib/metrics';
 
 const OPENAI_TIMEOUT_MS = 6000;
 const OPENAI_MODEL = 'gpt-4o-mini';
@@ -139,7 +140,10 @@ function withTimeout(promise, ms) {
  * @returns {Promise<AdvisoryResult>}
  */
 export async function generateAlertAdvisory(finding) {
+  const startedAt = Date.now();
+
   if (!process.env.OPENAI_API_KEY) {
+    recordAiCall({ durationMs: Date.now() - startedAt, success: false, fallback: true });
     return {
       source: 'FALLBACK',
       explanations: buildFallbackAdvisory(finding),
@@ -171,6 +175,7 @@ export async function generateAlertAdvisory(finding) {
     const parsedJson = JSON.parse(rawContent);
     const validated = advisoryResponseSchema.parse(parsedJson);
 
+    recordAiCall({ durationMs: Date.now() - startedAt, success: true, fallback: false });
     return {
       source: 'AI',
       explanations: {
@@ -180,6 +185,7 @@ export async function generateAlertAdvisory(finding) {
       },
     };
   } catch (error) {
+    recordAiCall({ durationMs: Date.now() - startedAt, success: false, fallback: true });
     return {
       source: 'FALLBACK',
       explanations: buildFallbackAdvisory(finding),
