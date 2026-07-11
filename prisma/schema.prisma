@@ -1,0 +1,176 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum RiskStatus {
+  SAFE
+  WARNING
+  CRITICAL
+}
+
+enum ProviderCode {
+  BKASH
+  NAGAD
+  ROCKET
+}
+
+enum TransactionType {
+  CASH_IN
+  CASH_OUT
+}
+
+enum ScenarioType {
+  HIDDEN_SHORTAGE
+  HIGH_VELOCITY
+  DATA_INCONSISTENCY
+  COORDINATED_CLOSURE
+}
+
+enum AlertStatus {
+  PENDING
+  ACKNOWLEDGED
+  IN_PROGRESS
+  RESOLVED
+  DISMISSED
+}
+
+enum ConfidenceLevel {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum AlertSource {
+  RULE_BASED
+  HYBRID
+}
+
+// ---------------------------------------------------------------------------
+// Core entities
+// ---------------------------------------------------------------------------
+
+model Area {
+  id     String  @id @default(cuid())
+  name   String  @unique
+  agents Agent[]
+}
+
+model Provider {
+  id           String            @id @default(cuid())
+  code         ProviderCode      @unique
+  name         String
+  balances     ProviderBalance[]
+  alerts       Alert[]
+  transactions Transaction[]
+}
+
+model Agent {
+  id           String     @id @default(cuid())
+  name         String
+  outletCode   String     @unique
+  areaId       String
+  area         Area       @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  latitude     Float?
+  longitude    Float?
+  physicalCash Decimal    @default(0) @db.Decimal(12, 2)
+  riskStatus   RiskStatus @default(SAFE) 
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  balances     ProviderBalance[]
+  transactions Transaction[]
+  alerts       Alert[]
+
+  @@index([riskStatus])
+  @@index([areaId])
+}
+
+model ProviderBalance {
+  id         String   @id @default(cuid())
+  agentId    String
+  providerId String
+  balance    Decimal  @default(0) @db.Decimal(12, 2)
+  updatedAt  DateTime @updatedAt
+
+  agent      Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Restrict)
+
+  @@unique([agentId, providerId])
+  @@index([providerId])
+}
+
+model Transaction {
+  id            String          @id @default(cuid())
+  agentId       String
+  agent         Agent           @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  providerId    String
+  provider      Provider        @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  type          TransactionType
+  amount        Decimal         @db.Decimal(12, 2)
+  isLate        Boolean         @default(false)
+  isConflicting Boolean         @default(false)
+  timestamp     DateTime        @default(now())
+
+  @@index([agentId, timestamp])
+  @@index([providerId, timestamp])
+}
+
+model Owner {
+  id   String @id 
+  name String
+  role String 
+
+  ownedAlerts Alert[]      @relation("AlertOwner")
+  alertEvents AlertEvent[] @relation("EventActor")
+}
+
+// ---------------------------------------------------------------------------
+// Alerts + audit
+// ---------------------------------------------------------------------------
+
+model Alert {
+  id               String          @id @default(cuid())
+  agentId          String
+  agent            Agent           @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  providerId       String?
+  provider         Provider?       @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  scenarioType     ScenarioType
+  source           AlertSource     @default(RULE_BASED)
+  evidence         Json            
+  explanations     Json?           
+  confidence       ConfidenceLevel @default(MEDIUM)
+  confidenceReason String?
+  status           AlertStatus     @default(PENDING)
+  ownerId          String?
+  owner            Owner?          @relation("AlertOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  assignedAt       DateTime?
+  createdAt        DateTime        @default(now())
+  resolvedAt       DateTime?
+
+  events AlertEvent[]
+
+  @@index([agentId, status])
+  @@index([status])
+  @@index([scenarioType])
+}
+
+model AlertEvent {
+  id         String       @id @default(cuid())
+  alertId    String
+  alert      Alert        @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  fromStatus AlertStatus?
+  toStatus   AlertStatus?
+  actorId    String
+  actor      Owner        @relation("EventActor", fields: [actorId], references: [id], onDelete: Restrict)
+  note       String?
+  timestamp  DateTime     @default(now())
+
+  @@index([alertId, timestamp])
+  @@index([actorId])
+}
