@@ -99,8 +99,17 @@ export default function SimulationPage() {
       addLog(`Agent Cash After: ৳${simulation.physicalCashAfter}`, 'info');
       addLog(`Alerts Triggered: ${alertsCreated.length} new anomalies detected.`, alertsCreated.length > 0 ? 'warning' : 'success');
       addLog(`Execution Time: ${durationMs}ms`, 'info');
-      
-      toast.success('Simulation executed successfully! Check Alerts Dashboard.');
+
+      if (alertsCreated.length > 0) {
+        for (const alert of alertsCreated) {
+          toast.warning(`New alert: ${alert.scenarioType.replace('_', ' ')}`, {
+            description: alert.confidenceReason,
+            duration: 8000,
+          });
+        }
+      } else {
+        toast.success('Simulation executed successfully — no new anomalies detected.');
+      }
       
       const histRes = await fetch('/api/simulation/history?limit=5');
       const histJson = await histRes.json();

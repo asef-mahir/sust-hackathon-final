@@ -64,20 +64,26 @@ export default function OpsDashboardPage() {
     }
   };
 
-  const handleEscalate = (alertId) => {
-    const note = window.prompt("Enter escalation note for the Risk Team:");
-    if (!note) {
-      toast.error("Escalation requires a case note.");
-      return;
+  const handleEscalate = async (alertId) => {
+    setProcessingId(alertId);
+    try {
+      const ownersRes = await fetch('/api/owners?role=RISK');
+      const ownersJson = await ownersRes.json();
+      const riskOwner = ownersJson.success ? ownersJson.data.owners[0] : null;
+
+      if (!riskOwner) {
+        toast.error('No Risk analyst found to escalate this alert to.');
+        setProcessingId(null);
+        return;
+      }
+
+      // No note is required here — escalation itself (the ownership handoff)
+      // is the meaningful audit event; nothing further needs to be typed.
+      await handleAction(alertId, 'ESCALATE', undefined, riskOwner.id);
+    } catch (err) {
+      toast.error('Failed to look up the Risk team.');
+      setProcessingId(null);
     }
-    
-    // In a real app, this ID comes from a dropdown of users. 
-    // For the hackathon demo, we fetch the Risk user's ID from our seeded data dynamically via an API, 
-    // or we bypass the strict ID check in the UI and let the backend assign it to the 'RISK' queue.
-    // Assuming your risk user was seeded, we will pass a placeholder that your backend can handle, 
-    // or you must replace 'RISK_USER_ID' with the actual seeded Supabase ID of Nadia Chowdhury.
-    const riskUserId = process.env.NEXT_PUBLIC_DEMO_RISK_USER_ID || 'risk-user-id'; 
-    handleAction(alertId, 'ESCALATE', note, riskUserId);
   };
 
   if (isLoading || !data) {

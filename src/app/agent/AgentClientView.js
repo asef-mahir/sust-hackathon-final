@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Wallet, AlertTriangle, ShieldAlert, CheckCircle, Loader2, RefreshCw, CalendarDays } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -36,13 +36,34 @@ export default function AgentClientView({ agentId }) {
   const [isProcessing, setIsProcessing] = useState(null);
   const [langPreference, setLangPreference] = useState('en');
 
-  const fetchAgentData = async () => {
-    setIsLoading(true);
+  // Tracks which alert IDs have already been seen, so polling only pops up
+  // a notification for genuinely new inbox items — never for the initial
+  // load, and never re-announces one already shown.
+  const seenAlertIdsRef = useRef(null);
+
+  const fetchAgentData = async ({ silent = false } = {}) => {
+    if (!silent) setIsLoading(true);
     try {
       const res = await fetch(`/api/agents/${agentId}`);
       const json = await res.json();
-      
+
       if (res.ok && json.success) {
+        const incomingAlerts = json.data.activeAlerts ?? [];
+
+        if (seenAlertIdsRef.current === null) {
+          // First load: just record what's already there, don't announce it.
+          seenAlertIdsRef.current = new Set(incomingAlerts.map((a) => a.id));
+        } else {
+          const newOnes = incomingAlerts.filter((a) => !seenAlertIdsRef.current.has(a.id));
+          for (const alert of newOnes) {
+            toast.warning('New advisory in your inbox', {
+              description: alert.confidenceReason || `${alert.scenarioType} flagged for review.`,
+              duration: 8000,
+            });
+          }
+          seenAlertIdsRef.current = new Set(incomingAlerts.map((a) => a.id));
+        }
+
         setData(json.data);
       } else {
         toast.error(json.message || 'Failed to load agent data');
@@ -50,11 +71,12 @@ export default function AgentClientView({ agentId }) {
     } catch (err) {
       toast.error('Network error while loading wallet.');
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
   useEffect(() => {
+    seenAlertIdsRef.current = null;
     fetchAgentData();
 
     // Pull local fallback storage preference configuration for client view
@@ -64,6 +86,15 @@ export default function AgentClientView({ agentId }) {
         setLangPreference(stored);
       }
     }
+  }, [agentId]);
+
+  // Poll for new advisory-inbox items so the agent gets a popup the moment
+  // something new arrives, without needing to hit "Sync Balances" manually.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchAgentData({ silent: true });
+    }, 15000);
+    return () => clearInterval(interval);
   }, [agentId]);
 
   const handleAcknowledge = async (alertId) => {
