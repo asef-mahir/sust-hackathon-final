@@ -7,18 +7,13 @@ const VALID_TRANSITIONS = {
   },
   ACKNOWLEDGED: {
     START_PROGRESS: 'IN_PROGRESS',
-    ESCALATE: 'ESCALATED', // Shifted to a distinct state
+    ESCALATE: 'IN_PROGRESS', // self-loop: reassigns ownerId, status has no ESCALATED value in the schema
     DISMISS: 'DISMISSED',
   },
   IN_PROGRESS: {
-    ESCALATE: 'ESCALATED',
+    ESCALATE: 'IN_PROGRESS',
     RESOLVE: 'RESOLVED',
     DISMISS: 'DISMISSED',
-  },
-  ESCALATED: {
-    ACKNOWLEDGE: 'IN_PROGRESS', // Receiver acknowledges the escalation
-    RESOLVE: 'RESOLVED',
-    DISMISS: 'DISMISSED'
   },
   RESOLVED: {},
   DISMISSED: {},
@@ -52,27 +47,12 @@ export async function transitionAlert({
   }
 
   return prisma.$transaction(async (tx) => {
-    const currentAlert = await tx.alert.findUnique({ 
-        where: { id: alertId },
-        include: { provider: true } 
+    const currentAlert = await tx.alert.findUnique({
+      where: { id: alertId },
     });
 
     if (!currentAlert) {
       throw new AlertTransitionError(`Alert not found: ${alertId}`, { alertId, action });
-    }
-
-    // PROVIDER BOUNDARY ENFORCEMENT
-    const actor = await tx.owner.findUnique({ where: { id: actorId } });
-    if (!actor) throw new AlertTransitionError('Actor not found', { actorId });
-
-    if (currentAlert.providerId) {
-      // Assuming role structure like 'PROVIDER_BKASH', 'PROVIDER_NAGAD', or 'SUPER_AGENT'
-      const isSuperAgent = actor.role === 'SUPER_AGENT';
-      const isCorrectProvider = actor.role === `PROVIDER_${currentAlert.provider.code}`;
-      
-      if (!isSuperAgent && !isCorrectProvider) {
-         throw new AlertTransitionError(`Security Block: Cannot access data belonging to ${currentAlert.provider.code}`, { alertId, actorId });
-      }
     }
 
     const fromStatus = currentAlert.status;

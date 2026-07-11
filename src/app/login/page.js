@@ -33,11 +33,14 @@ export default function LoginPage() {
         return;
       }
 
-      // Force Next.js to re-evaluate the Server Components with the new cookie
-      router.refresh();
-      
-      // Navigate to the main dashboard
+      // Navigate to the main dashboard, then force Next.js to re-evaluate
+      // the Server Components (AppShell/TopNav) with the new auth cookie.
+      // Order matters: refresh() only invalidates the CURRENT route's cached
+      // data, so calling it before push() refreshed the login page instead
+      // of the destination — leaving the navbar stale until a manual
+      // browser refresh.
       router.push('/');
+      router.refresh();
     } catch (err) {
       console.error('Login error:', err);
       setError('An unexpected error occurred. Please try again.');
