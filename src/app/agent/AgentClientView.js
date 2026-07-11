@@ -1,0 +1,202 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { Wallet, AlertTriangle, ShieldAlert, CheckCircle, Loader2, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
+
+export default function AgentClientView({ agentId }) {
+  const [data, setData] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(null);
+
+  const fetchAgentData = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(`/api/agents/${agentId}`);
+      const json = await res.json();
+      
+      if (res.ok && json.success) {
+        setData(json.data);
+      } else {
+        toast.error(json.message || 'Failed to load agent data');
+      }
+    } catch (err) {
+      toast.error('Network error while loading wallet.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAgentData();
+  }, [agentId]);
+
+  const handleAcknowledge = async (alertId) => {
+    setIsProcessing(alertId);
+    try {
+      const res = await fetch(`/api/alerts/${alertId}/actions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'ACKNOWLEDGE',
+          note: 'Agent acknowledged the warning from the dashboard.',
+        }),
+      });
+
+      const json = await res.json();
+
+      if (res.ok && json.success) {
+        toast.success('Alert acknowledged successfully.');
+        fetchAgentData(); // Refresh to clear the alert or update status
+      } else {
+        toast.error(json.message || 'Failed to acknowledge alert.');
+      }
+    } catch (err) {
+      toast.error('Network error during acknowledgment.');
+    } finally {
+      setIsProcessing(null);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-cyan-600" />
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
+  const { agent, liquidity, activeAlerts } = data;
+
+  return (
+    <div className="space-y-8 animate-in fade-in duration-500">
+      
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-slate-200 pb-5">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+            {agent.name}
+          </h1>
+          <p className="mt-1 flex items-center gap-2 text-sm text-slate-500">
+            <span>Outlet Code: {agent.outletCode}</span>
+            <span className="h-1 w-1 rounded-full bg-slate-300"></span>
+            <span className={`font-semibold ${agent.riskStatus === 'HIGH' ? 'text-red-600' : 'text-emerald-600'}`}>
+              Status: {agent.riskStatus}
+            </span>
+          </p>
+        </div>
+        <button 
+          onClick={fetchAgentData}
+          className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition-all hover:bg-slate-50 hover:text-slate-900"
+        >
+          <RefreshCw className="h-4 w-4" />
+          Sync Balances
+        </button>
+      </div>
+
+      {/* Unified Liquidity Banner */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        {/* Physical Cash (The Anchor) */}
+        <div className="flex flex-col rounded-xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm md:col-span-1">
+          <div className="mb-4 flex items-center gap-3 text-emerald-700">
+            <Wallet className="h-6 w-6" />
+            <h3 className="font-bold uppercase tracking-wider text-xs">Physical Cash</h3>
+          </div>
+          <span className="text-3xl font-extrabold text-emerald-900">
+            ৳{parseFloat(agent.physicalCash).toLocaleString()}
+          </span>
+          <span className="mt-2 text-xs font-medium text-emerald-600">Shared Drawer</span>
+        </div>
+
+        {/* E-Money Providers */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 md:col-span-3">
+          {liquidity.providerBalances.map((provider) => {
+            // Visual health logic: Warn if a specific provider's share drops below 10%
+            const isLow = provider.shareOfTotal < 0.10;
+            return (
+              <div 
+                key={provider.providerId} 
+                className={`flex flex-col rounded-xl border p-5 shadow-sm transition-all ${
+                  isLow ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-white'
+                }`}
+              >
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className={`font-bold uppercase tracking-wider text-xs ${isLow ? 'text-amber-700' : 'text-slate-500'}`}>
+                    {provider.providerName}
+                  </h3>
+                  {isLow && <AlertTriangle className="h-4 w-4 text-amber-500" />}
+                </div>
+                <span className={`text-2xl font-extrabold ${isLow ? 'text-amber-900' : 'text-slate-900'}`}>
+                  ৳{parseFloat(provider.balance).toLocaleString()}
+                </span>
+                <span className={`mt-2 text-xs font-medium ${isLow ? 'text-amber-600' : 'text-slate-400'}`}>
+                  {(provider.shareOfTotal * 100).toFixed(1)}% of Network
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Advisory Inbox */}
+      <div>
+        <h2 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-500">
+          Agent Advisory Inbox
+        </h2>
+        
+        {activeAlerts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+            <CheckCircle className="mb-3 h-10 w-10 text-emerald-500" />
+            <p className="text-sm font-medium text-slate-600">All balances healthy. No active warnings.</p>
+          </div>
+        ) : (
+          <div className="grid gap-4">
+            {activeAlerts.map((alert) => (
+              <div 
+                key={alert.id} 
+                className={`flex flex-col justify-between gap-4 rounded-xl border p-5 shadow-sm md:flex-row md:items-center ${
+                  alert.confidence === 'HIGH' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'
+                }`}
+              >
+                <div className="flex items-start gap-4 md:items-center">
+                  <div className={`mt-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full ${
+                    alert.confidence === 'HIGH' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'
+                  }`}>
+                    {alert.confidence === 'HIGH' ? <ShieldAlert className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
+                  </div>
+                  <div>
+                    <h3 className={`font-bold ${alert.confidence === 'HIGH' ? 'text-red-900' : 'text-amber-900'}`}>
+                      {alert.scenarioType === 'HIDDEN_SHORTAGE' ? 'সম্ভাব্য ব্যালেন্স সংকট (Liquidity Warning)' : 'সিস্টেম সতর্কতা (System Alert)'}
+                    </h3>
+                    <p className={`mt-1 text-sm ${alert.confidence === 'HIGH' ? 'text-red-700' : 'text-amber-800'}`}>
+                      বর্তমান লেনদেনের ধারা অনুযায়ী আপনার নগদ টাকা বা প্রোভাইডার ব্যালেন্স শেষ হয়ে যেতে পারে। অনুগ্রহ করে প্রয়োজনীয় ব্যবস্থা নিন।
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row md:items-center">
+                  {alert.status === 'PENDING' && (
+                    <button
+                      onClick={() => handleAcknowledge(alert.id)}
+                      disabled={isProcessing === alert.id}
+                      className="inline-flex items-center justify-center whitespace-nowrap rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-cyan-700 disabled:opacity-50"
+                    >
+                      {isProcessing === alert.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Acknowledge
+                    </button>
+                  )}
+                  <button className="inline-flex items-center justify-center whitespace-nowrap rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:bg-slate-50">
+                    Request Refill
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+    </div>
+  );
+}

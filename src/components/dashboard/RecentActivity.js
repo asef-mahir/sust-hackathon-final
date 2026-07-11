@@ -31,9 +31,9 @@ export async function RecentActivity() {
   const { ok, body } = await serverApiFetch('/api/simulation/history?limit=5');
 
   return (
-    <Card className="bg-surface border-white/10">
+    <Card className="bg-white border-slate-200">
       <CardHeader>
-        <CardTitle className="text-sm font-medium text-white/80">
+        <CardTitle className="text-sm font-medium text-slate-900">
           Recent Activity
         </CardTitle>
       </CardHeader>
@@ -50,17 +50,17 @@ export async function RecentActivity() {
             {body.data.runs.map((run) => (
               <div
                 key={run.id}
-                className="flex items-center justify-between border-b border-white/5 py-2 text-sm last:border-0"
+                className="flex items-center justify-between border-b border-slate-100 py-2 text-sm last:border-0"
               >
                 <div>
-                  <span className="text-white/80">
+                  <span className="text-slate-900">
                     {SCENARIO_LABELS[run.scenarioType] ?? run.scenarioType}
                   </span>
-                  <span className="ml-2 text-xs text-white/40">
+                  <span className="ml-2 text-xs text-slate-500">
                     {run.agent?.outletCode} · {run.triggeredBy?.name}
                   </span>
                 </div>
-                <div className="flex items-center gap-3 text-xs text-white/40">
+                <div className="flex items-center gap-3 text-xs text-slate-500">
                   <span className="ls-numeric">{run.alertsCreated} alerts</span>
                   <span>{formatRelativeTime(run.createdAt)}</span>
                 </div>

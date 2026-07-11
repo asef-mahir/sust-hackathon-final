@@ -1,6 +1,10 @@
+import { Inter } from 'next/font/google';
 import './globals.css';
 import { Toaster } from '@/components/ui/sonner';
 import { AppShell } from '@/components/layout/AppShell';
+
+// Initialize the Inter font properly
+const inter = Inter({ subsets: ['latin'] });
 
 export const metadata = {
   title: 'Liquidity Sentinel',
@@ -9,10 +13,10 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className="dark">
-      <body className="bg-ink font-sans text-white antialiased">
+    <html lang="en">
+      <body className={`${inter.className} bg-slate-50 text-slate-900 antialiased min-h-screen selection:bg-cyan-500/30`}>
         <AppShell>{children}</AppShell>
-        <Toaster theme="dark" />
+        <Toaster richColors position="top-right" />
       </body>
     </html>
   );

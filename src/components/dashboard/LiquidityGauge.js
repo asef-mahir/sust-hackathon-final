@@ -37,14 +37,14 @@ export function LiquidityGauge({ ratio, label, className = '' }) {
           <span
             key={index}
             className={`w-[3px] rounded-[1px] transition-colors ${
-              index < filledSegments ? colorClass : 'bg-white/10'
+              index < filledSegments ? colorClass : 'bg-slate-200'
             }`}
             style={{ height: index % 4 === 0 ? '18px' : '12px' }}
           />
         ))}
       </div>
       {label ? (
-        <span className="ls-numeric text-xs text-white/60">{label}</span>
+        <span className="ls-numeric text-xs text-slate-500">{label}</span>
       ) : null}
     </div>
   );

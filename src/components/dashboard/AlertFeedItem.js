@@ -21,13 +21,13 @@ export function AlertFeedItem({ id, scenarioType, status, confidence, agent, cre
   return (
     <Link
       href={`/alerts/${id}`}
-      className="flex items-center justify-between gap-3 rounded-md border border-white/5 bg-white/[0.02] px-3 py-2 transition-colors hover:bg-white/[0.05]"
+      className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 transition-colors hover:bg-slate-100"
     >
       <div className="min-w-0">
-        <p className="truncate text-sm text-white/90">
+        <p className="truncate text-sm text-slate-900">
           {SCENARIO_LABELS[scenarioType] ?? scenarioType}
         </p>
-        <p className="truncate text-xs text-white/40">
+        <p className="truncate text-xs text-slate-500">
           {agent?.outletCode ?? 'Unknown outlet'} · {status}
         </p>
       </div>

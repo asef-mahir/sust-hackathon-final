@@ -20,14 +20,14 @@ const PROVIDER_ACCENTS = {
  * @param {{ providerCode: string, providerName: string, totalBalance: string, shareOfTotal: number }} props
  */
 export function ProviderCard({ providerCode, providerName, totalBalance, shareOfTotal }) {
-  const accentClass = PROVIDER_ACCENTS[providerCode] ?? 'text-white';
+  const accentClass = PROVIDER_ACCENTS[providerCode] ?? 'text-slate-900';
 
   return (
-    <Card className="bg-surface border-white/10">
+    <Card className="bg-white border-slate-200">
       <CardContent className="flex flex-col gap-3 p-4">
         <div className="flex items-center justify-between">
           <span className={`text-sm font-semibold ${accentClass}`}>{providerName}</span>
-          <span className="ls-numeric text-lg font-semibold text-white">
+          <span className="ls-numeric text-lg font-semibold text-slate-900">
             {formatCurrency(totalBalance, { compact: true })}
           </span>
         </div>

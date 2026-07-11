@@ -11,10 +11,10 @@ import { RefreshButton } from './RefreshButton';
 
 export function DashboardHeader() {
   return (
-    <header className="flex items-center justify-between border-b border-white/10 pb-4">
+    <header className="flex items-center justify-between border-b border-slate-200 pb-4">
       <div>
-        <h1 className="text-lg font-semibold text-white">Liquidity Sentinel</h1>
-        <p className="text-xs text-white/40">Network Operations Center</p>
+        <h1 className="text-lg font-semibold text-slate-900">Liquidity Sentinel</h1>
+        <p className="text-xs text-slate-500">Network Operations Center</p>
       </div>
       <div className="flex items-center gap-3">
         <span className="flex items-center gap-1.5 text-xs text-healthy">

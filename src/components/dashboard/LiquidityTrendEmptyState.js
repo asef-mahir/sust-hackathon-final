@@ -15,9 +15,9 @@ import { TrendingUp } from 'lucide-react';
 
 export function LiquidityTrendEmptyState() {
   return (
-    <Card className="bg-surface border-white/10">
+    <Card className="bg-white border-slate-200">
       <CardHeader>
-        <CardTitle className="text-sm font-medium text-white/80">
+        <CardTitle className="text-sm font-medium text-slate-900">
           Liquidity Trend
         </CardTitle>
       </CardHeader>

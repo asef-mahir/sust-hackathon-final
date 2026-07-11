@@ -18,9 +18,9 @@ export async function AlertFeed() {
   const { ok, body } = await serverApiFetch('/api/alerts?status=PENDING&limit=5');
 
   return (
-    <Card className="bg-surface border-white/10">
+    <Card className="bg-white border-slate-200">
       <CardHeader>
-        <CardTitle className="text-sm font-medium text-white/80">
+        <CardTitle className="text-sm font-medium text-slate-900">
           Live Alert Feed
         </CardTitle>
       </CardHeader>

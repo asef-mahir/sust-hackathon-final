@@ -176,6 +176,7 @@ export async function runSimulationScenario({
   const syntheticTransactions = generator({ agentId, targetProviderId, rng });
 
   const result = await prisma.$transaction(async (tx) => {
+    
     const agent = await tx.agent.findUnique({ where: { id: agentId } });
     if (!agent) {
       throw new Error(`Agent not found: ${agentId}`);
@@ -186,6 +187,7 @@ export async function runSimulationScenario({
         agentId_providerId: { agentId, providerId: targetProviderId },
       },
     });
+    
     if (!providerBalanceRow) {
       throw new Error(
         `ProviderBalance not found for agent ${agentId} / provider ${targetProviderId}.`
@@ -241,6 +243,10 @@ export async function runSimulationScenario({
         },
       ],
     };
+  }, {
+    // FIX: Increase timeout thresholds to prevent Prisma from dropping the connection
+    maxWait: 10000, // 10 seconds (default is 2)
+    timeout: 20000, // 20 seconds (default is 5)
   });
 
   return {

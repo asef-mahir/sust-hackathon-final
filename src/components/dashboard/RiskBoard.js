@@ -18,9 +18,9 @@ export function RiskBoard({ topRiskAreas }) {
   const maxCount = Math.max(1, ...topRiskAreas.map((a) => a.alertCount));
 
   return (
-    <Card className="bg-surface border-white/10">
+    <Card className="bg-white border-slate-200">
       <CardHeader>
-        <CardTitle className="text-sm font-medium text-white/80">
+        <CardTitle className="text-sm font-medium text-slate-900">
           Top Risk Areas
         </CardTitle>
       </CardHeader>
@@ -34,16 +34,16 @@ export function RiskBoard({ topRiskAreas }) {
           <div className="flex flex-col gap-3">
             {topRiskAreas.map((area) => (
               <div key={area.areaId} className="flex items-center gap-3">
-                <span className="w-28 shrink-0 truncate text-sm text-white/70">
+                <span className="w-28 shrink-0 truncate text-sm text-slate-700">
                   {area.areaName}
                 </span>
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/5">
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
                   <div
                     className="h-full rounded-full bg-critical"
                     style={{ width: `${(area.alertCount / maxCount) * 100}%` }}
                   />
                 </div>
-                <span className="ls-numeric w-6 text-right text-sm text-white/60">
+                <span className="ls-numeric w-6 text-right text-sm text-slate-500">
                   {area.alertCount}
                 </span>
               </div>
