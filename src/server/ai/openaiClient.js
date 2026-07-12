@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { recordAiCall } from '@/lib/metrics';
 
 const OPENAI_TIMEOUT_MS = 6000;
-const OPENAI_MODEL = 'gpt-4o-mini';
+const OPENAI_MODEL = 'gpt-5';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
