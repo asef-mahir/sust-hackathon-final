@@ -134,45 +134,51 @@ export async function GET(request, { params }) {
           ? JSON.parse(hiddenShortageAlert.evidence)
           : hiddenShortageAlert.evidence;
 
-        if (evidenceData.projectedDepletionMinutes) {
-          const criticalDate = new Date(
-            new Date(hiddenShortageAlert.createdAt).getTime() +
-            evidenceData.projectedDepletionMinutes * 60 * 1000
-          );
+        // Fetch dynamic burn rate from evidence, fallback to a default (e.g. 4500) if missing
+        const hourlyBurnRate = evidenceData.hourlyBurnRate || 4500;
 
-          // Always format/derive against Bangladesh time (Asia/Dhaka)
-          const criticalTime = criticalDate.toLocaleTimeString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit',
-            timeZone: 'Asia/Dhaka',
-          });
-          const dhakaHour = Number(
-            criticalDate.toLocaleString('en-US', {
-              hour: '2-digit',
-              hour12: false,
-              timeZone: 'Asia/Dhaka',
-            })
-          );
-          // 7pm-4am is night, the rest of the day is day.
-          const periodBn = dhakaHour >= 19 || dhakaHour < 4 ? 'রাত' : 'দিন';
+        // --- NEW DYNAMIC PEAK TARGET LOGIC ---
+        // Always format/derive against Bangladesh time (Asia/Dhaka)
+        const dhakaNowString = new Date().toLocaleString("en-US", { timeZone: 'Asia/Dhaka' });
+        const dhakaNow = new Date(dhakaNowString);
+        const currentHour = dhakaNow.getHours();
+        
+        let targetDate = new Date(dhakaNow);
+        let targetTimeLabel = '';
 
-          // Calculate a safe buffer amount needed
-          const requiredAmount = Math.max(
-            20000,
-            Math.round((evidenceData.hourlyBurnRate || 0) * (evidenceData.projectedDepletionMinutes / 60) * 1.5)
-          );
-
-          forecast = {
-            isCriticalError: false,
-            criticalTime,
-            periodBn,
-            requiredAmount,
-            hourlyBurnRate: Math.round(evidenceData.hourlyBurnRate || 0),
-            minutesRemaining: evidenceData.projectedDepletionMinutes,
-            primaryRiskVector: evidenceData.primaryRiskVector || 'PROVIDER_BALANCE',
-            providerCode: evidenceData.thinProvider?.providerCode || null
-          };
+        if (currentHour < 10) {
+          // Target is 10:00 AM today
+          targetDate.setHours(10, 0, 0, 0);
+          targetTimeLabel = '10:00 AM';
+        } else if (currentHour < 16) {
+          // Target is 4:00 PM today
+          targetDate.setHours(16, 0, 0, 0);
+          targetTimeLabel = '4:00 PM';
+        } else {
+          // Target is 10:00 AM tomorrow
+          targetDate.setDate(targetDate.getDate() + 1);
+          targetDate.setHours(10, 0, 0, 0);
+          targetTimeLabel = '10:00 AM (Tomorrow)';
         }
+
+        // Calculate time difference in hours
+        const diffMs = targetDate.getTime() - dhakaNow.getTime();
+        const hoursRemaining = diffMs / (1000 * 60 * 60);
+
+        // Calculate dynamic amount based on hours remaining & round up to nearest 100 for clean numbers
+        const exactRequiredAmount = hoursRemaining * hourlyBurnRate;
+        const requiredAmount = Math.ceil(exactRequiredAmount / 100) * 100;
+
+        forecast = {
+          isCriticalError: false,
+          criticalTime: targetTimeLabel,
+          periodBn: 'দিন', // 10 AM and 4 PM are always daytime
+          requiredAmount,
+          hourlyBurnRate: Math.round(hourlyBurnRate),
+          minutesRemaining: Math.floor(diffMs / (1000 * 60)),
+          primaryRiskVector: evidenceData.primaryRiskVector || 'PROVIDER_BALANCE',
+          providerCode: evidenceData.thinProvider?.providerCode || null
+        };
       }
     }
 

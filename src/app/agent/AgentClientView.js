@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { toast } from 'sonner';
+import { createClient } from '@supabase/supabase-js';
 
 const STORAGE_KEY = 'preferredExplanationLanguage';
 
@@ -61,7 +62,6 @@ export default function AgentClientView({ agentId }) {
   const [popupAlert, setPopupAlert] = useState(null);
   const seenAlertIdsRef = useRef(null);
 
-  // Helper to permanently dismiss an alert on this device
   const dismissAlertLocally = (alertId) => {
     if (typeof window !== 'undefined') {
       const stored = JSON.parse(window.localStorage.getItem('dismissedAlerts') || '[]');
@@ -86,17 +86,12 @@ export default function AgentClientView({ agentId }) {
           : [];
 
         if (seenAlertIdsRef.current === null) {
+          // INITIAL LOAD: Silently record existing alerts so we know what's already here.
+          // DO NOT trigger setPopupAlert here.
           seenAlertIdsRef.current = new Set(incomingAlerts.map((a) => a.id));
-          
-          // Only show popup if it hasn't been dismissed AND isn't already acknowledged in the DB
-          const validAlerts = incomingAlerts.filter(
-            (a) => !dismissed.includes(a.id) && a.status !== 'ACKNOWLEDGED'
-          );
-          
-          if (validAlerts.length > 0) {
-            setPopupAlert(validAlerts[0]);
-          }
         } else {
+          // SUBSEQUENT FETCHES: This runs when Realtime triggers or manual sync occurs.
+          // It looks for alerts that were not present on initial load.
           const newOnes = incomingAlerts.filter(
             (a) => !seenAlertIdsRef.current.has(a.id) && !dismissed.includes(a.id)
           );
@@ -109,6 +104,7 @@ export default function AgentClientView({ agentId }) {
                 duration: 8000,
               });
             }
+            // Update the ref so we don't trigger again for these
             seenAlertIdsRef.current = new Set(incomingAlerts.map((a) => a.id));
           }
         }
@@ -124,6 +120,7 @@ export default function AgentClientView({ agentId }) {
     }
   };
 
+  // Initial Fetch & Preference Load
   useEffect(() => {
     seenAlertIdsRef.current = null;
     fetchAgentData();
@@ -136,11 +133,36 @@ export default function AgentClientView({ agentId }) {
     }
   }, [agentId]);
 
+  // REALTIME SUBSCRIPTION (Replaces setInterval)
   useEffect(() => {
-    const interval = setInterval(() => {
-      fetchAgentData({ silent: true });
-    }, 15000);
-    return () => clearInterval(interval);
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      console.warn('Supabase env vars missing. Real-time features disabled.');
+      return;
+    }
+
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL, 
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    );
+
+    const channel = supabase
+      .channel('realtime-alerts')
+      .on('postgres_changes', { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'Alert', 
+          filter: `agentId=eq.${agentId}` 
+        }, 
+        (payload) => {
+          console.log('Realtime Alert Triggered:', payload.new);
+          fetchAgentData({ silent: true });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [agentId]);
 
   const handleModalAcknowledge = async () => {
@@ -222,7 +244,6 @@ export default function AgentClientView({ agentId }) {
 
       {/* Dynamic Forecast / Error Banner */}
       {liquidity.forecast?.isCriticalError ? (
-        /* BACKEND DRIVEN: Critical Red Card for Negative Balances */
         <div className="flex flex-col rounded-xl border p-5 shadow-sm border-l-4 bg-red-50 border-red-500 border-red-200">
           <div className="flex items-center gap-3 mb-2 text-red-700">
             <ShieldAlert className="h-5 w-5" />
@@ -230,7 +251,7 @@ export default function AgentClientView({ agentId }) {
           </div>
           <p className="text-sm text-slate-700 leading-relaxed font-medium">
             {langPreference === 'bn' ? (
-              `সতর্কতা: আপনার ${liquidity.forecast.details.map(p => p.name).join(', ')} একাউন্টে নেগেটিভ ব্যালেন্স (৳${liquidity.forecast.details.map(p => Math.abs(p.amount).toLocaleString('en-IN')).join(', ')}) রয়েছে।`
+              `সতর্কতা: আপনার ${liquidity.forecast.details.map(p => p.name).join(', ')} একাউন্টে নেগেটিভ ব্যালেন্স (৳${liquidity.forecast.details.map(p => Math.abs(p.amount).toLocaleString('en-IN')).join(', ')}) রয়েছে।`
             ) : langPreference === 'banglish' ? (
               `Sotorkota: Apnar ${liquidity.forecast.details.map(p => p.name).join(', ')} account e negative balance (৳${liquidity.forecast.details.map(p => Math.abs(p.amount).toLocaleString('en-IN')).join(', ')}) ache.`
             ) : (
@@ -239,7 +260,6 @@ export default function AgentClientView({ agentId }) {
           </p>
         </div>
       ) : liquidity.forecast?.requiredAmount ? (
-        /* BACKEND DRIVEN: Standard Forecast Card */
         <div className={`flex flex-col rounded-xl border p-5 shadow-sm border-l-4 ${isPhysicalRisk ? 'bg-emerald-50 border-emerald-500 border-emerald-200' : 'bg-blue-50 border-blue-500 border-blue-200'}`}>
           <div className={`flex items-center gap-3 mb-2 ${isPhysicalRisk ? 'text-emerald-700' : 'text-blue-700'}`}>
             <CalendarDays className="h-5 w-5" />
@@ -270,7 +290,6 @@ export default function AgentClientView({ agentId }) {
           </div>
         </div>
       ) : (
-        /* BACKEND DRIVEN: Relaxing Green Card */
         <div className="flex flex-col rounded-xl border p-5 shadow-sm border-l-4 bg-emerald-50 border-emerald-500 border-emerald-200">
           <div className="flex items-center gap-3 mb-2 text-emerald-700">
             <CheckCircle className="h-5 w-5" />
@@ -465,7 +484,7 @@ export default function AgentClientView({ agentId }) {
               ) : popupAlert.scenarioType === 'NEGATIVE_BALANCE' ? (
                 <div className="space-y-4">
                   <p className="text-base text-slate-800 leading-relaxed font-semibold">
-                    {langPreference === 'bn' ? 'একাউন্টে নেগেটিভ ব্যালেন্স পাওয়া গেছে। দ্রুত সমাধান করুন।' 
+                    {langPreference === 'bn' ? 'একাউন্টে নেগেটিভ ব্যালেন্স পাওয়া গেছে। দ্রুত সমাধান করুন।' 
                     : langPreference === 'banglish' ? 'Account e negative balance pawa geche. Druto somadhan korun.' 
                     : 'A negative balance has been detected. Please resolve immediately.'}
                   </p>
