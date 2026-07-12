@@ -34,7 +34,14 @@ function computeRiskStatus(findings) {
 }
 
 const requestSchema = z.object({
-  scenarioType: z.enum(['HIDDEN_SHORTAGE', 'HIGH_VELOCITY', 'DATA_INCONSISTENCY','PHYSICAL_CASH_EXHAUSTION','NEGATIVE_BALANCE']),
+  scenarioType: z.enum([
+    'HIDDEN_SHORTAGE', 
+    'HIGH_VELOCITY', 
+    'DATA_INCONSISTENCY',
+    'PHYSICAL_CASH_EXHAUSTION',
+    'NEGATIVE_BALANCE',
+    'COORDINATED_CLOSURE' // Added missing scenario
+  ]),
   agentId: z.string().min(1, 'agentId is required'),
   targetProviderId: z.string().min(1, 'targetProviderId is required'),
   seed: z.number().int().optional(),

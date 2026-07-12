@@ -15,35 +15,33 @@ function randomAmountBetween(rng, min, max) {
 }
 
 function generateHiddenShortageScenario({ targetProviderId, rng, intensity = 1.0 }) {
-  const transactionCount = Math.floor(5 * intensity);
+  const transactionCount = Math.min(4, Math.floor(4 * intensity) || 1);
   const transactions = [];
   let cumulativeOffsetMs = 0;
 
   for (let i = 0; i < transactionCount; i += 1) {
-    cumulativeOffsetMs += randomAmountBetween(rng, 30_000, 180_000); 
+    cumulativeOffsetMs += randomAmountBetween(rng, 30_000, 180_000);
     transactions.push({
       providerId: targetProviderId,
       type: 'CASH_IN', 
-      amount: randomAmountBetween(rng, 3000 * intensity, 9000 * intensity),
+      amount: randomAmountBetween(rng, 8000 * intensity, 15000 * intensity), 
       timestamp: new Date(Date.now() - (5 * 60_000 - cumulativeOffsetMs)),
     });
   }
   return transactions;
 }
 
-// NEW SCENARIO: Drains the physical drawer using randomized, high-volume cash-outs
 function generatePhysicalCashShortageScenario({ targetProviderId, rng, intensity = 1.0 }) {
-  const transactionCount = Math.floor(6 * intensity);
+  const transactionCount = Math.min(4, Math.floor(4 * intensity) || 1);
   const transactions = [];
   let cumulativeOffsetMs = 0;
 
   for (let i = 0; i < transactionCount; i += 1) {
-    cumulativeOffsetMs += randomAmountBetween(rng, 30_000, 150_000); 
+    cumulativeOffsetMs += randomAmountBetween(rng, 30_000, 150_000);
     transactions.push({
       providerId: targetProviderId,
-      type: 'CASH_OUT', // CASH_OUT depletes the physical cash drawer
-      // Wide randomization bypasses the "Amount Clustering" fraud check
-      amount: randomAmountBetween(rng, 10000 * intensity, 20000 * intensity),
+      type: 'CASH_OUT', 
+      amount: randomAmountBetween(rng, 15000 * intensity, 25000 * intensity),
       timestamp: new Date(Date.now() - (8 * 60_000 - cumulativeOffsetMs)),
     });
   }
@@ -55,8 +53,7 @@ function generateHighVelocityScenario({ targetProviderId, rng, intensity = 1.0 }
   const clusterBaseAmount = randomAmountBetween(rng, 4800, 5200);
   const transactions = [];
   let cumulativeOffsetMs = 0;
-
-  const SYNTHETIC_ACCOUNTS = ['CUST-SIM-999', 'CUST-SIM-999', 'CUST-SIM-999', 'CUST-SIM-999', 'CUST-SIM-888', 'CUST-SIM-888'];
+  const SYNTHETIC_ACCOUNTS = ['CUST-SIM-999', 'CUST-SIM-999', 'CUST-SIM-999', 'CUST-SIM-888', 'CUST-SIM-888'];
 
   for (let i = 0; i < transactionCount; i += 1) {
     cumulativeOffsetMs += randomAmountBetween(rng, 60_000, 150_000);
@@ -65,7 +62,7 @@ function generateHighVelocityScenario({ targetProviderId, rng, intensity = 1.0 }
       type: 'CASH_OUT',
       amount: Math.round(clusterBaseAmount * (0.96 + rng() * 0.08)),
       timestamp: new Date(Date.now() - (12 * 60_000 - cumulativeOffsetMs)),
-      syntheticAccountId: SYNTHETIC_ACCOUNTS[i % SYNTHETIC_ACCOUNTS.length] ?? null, 
+      syntheticAccountId: SYNTHETIC_ACCOUNTS[i % SYNTHETIC_ACCOUNTS.length] ?? null,
     });
   }
   return transactions;
@@ -77,24 +74,54 @@ function generateDataInconsistencyScenario({ targetProviderId, rng, intensity = 
   let cumulativeOffsetMs = 0;
 
   for (let i = 0; i < transactionCount; i += 1) {
-    cumulativeOffsetMs += randomAmountBetween(rng, 30_000, 90_000); 
+    cumulativeOffsetMs += randomAmountBetween(rng, 30_000, 90_000);
     transactions.push({
       providerId: targetProviderId,
       type: rng() > 0.5 ? 'CASH_IN' : 'CASH_OUT',
       amount: randomAmountBetween(rng, 1000, 5000),
-      isLate: i === 0,          
-      isConflicting: i === 1,   
+      isLate: i === 0,
+      isConflicting: i === 1,
       timestamp: new Date(Date.now() - (10 * 60_000 - cumulativeOffsetMs)),
     });
   }
   return transactions;
 }
 
+function generateCoordinatedClosureScenario({ targetProviderId, rng, intensity = 1.0 }) {
+  return [
+    {
+      providerId: targetProviderId,
+      type: 'CASH_OUT',
+      amount: 150000 * intensity, 
+      timestamp: new Date(),
+    },
+    {
+      providerId: targetProviderId, 
+      type: 'CASH_OUT',
+      amount: 150000 * intensity,
+      timestamp: new Date(),
+    }
+  ];
+}
+
+function generateNegativeBalanceScenario({ targetProviderId }) {
+  return [
+    {
+      providerId: targetProviderId,
+      type: 'CASH_IN',
+      amount: 9999999,
+      timestamp: new Date(),
+    }
+  ];
+}
+
 const SCENARIO_GENERATORS = {
   HIDDEN_SHORTAGE: generateHiddenShortageScenario,
-  PHYSICAL_CASH_EXHAUSTION: generatePhysicalCashShortageScenario, // ADDED
+  PHYSICAL_CASH_EXHAUSTION: generatePhysicalCashShortageScenario,
   HIGH_VELOCITY: generateHighVelocityScenario,
   DATA_INCONSISTENCY: generateDataInconsistencyScenario,
+  COORDINATED_CLOSURE: generateCoordinatedClosureScenario,
+  NEGATIVE_BALANCE: generateNegativeBalanceScenario,
 };
 
 function applyBalanceEffect(current, txn) {
@@ -110,7 +137,7 @@ function applyBalanceEffect(current, txn) {
   if (txn.type === 'CASH_IN') {
     return {
       physicalCash: current.physicalCash.plus(amount),
-      providerBalance: current.providerBalance.minus(amount),
+      providerBalance: current.providerBalance.minus(amount), 
     };
   }
   throw new Error(`Unknown transaction type: ${txn.type}`);
@@ -122,25 +149,44 @@ export async function runSimulationScenario({
   targetProviderId,
   seed = Date.now(),
   intensity = 1.0,
+  forceProfileMismatch = false // NEW: Contextual mismatch attack surface
 }) {
   const generator = SCENARIO_GENERATORS[scenarioType];
   if (!generator) {
-    throw new Error(`Unsupported scenario type: "${scenarioType}". Supported: ${Object.keys(SCENARIO_GENERATORS).join(', ')}`);
+    throw new Error(`Unsupported scenario type: "${scenarioType}".`);
+  }
+
+  let targetAgentId = agentId;
+
+  // NEW: Deliberately redirect the simulation to an agent in the "wrong" geographic area
+  // to prove the AI rule engine can detect contextual geographic anomalies.
+  if (forceProfileMismatch) {
+    let targetProfile = 'BALANCED';
+    if (scenarioType === 'PHYSICAL_CASH_EXHAUSTION') targetProfile = 'CASH_IN_DOMINANT';
+    if (scenarioType === 'HIDDEN_SHORTAGE') targetProfile = 'CASH_OUT_DOMINANT';
+
+    const mismatchedAgent = await prisma.agent.findFirst({
+      where: { area: { profile: targetProfile } }
+    });
+    
+    if (mismatchedAgent) {
+      targetAgentId = mismatchedAgent.id;
+    }
   }
 
   const rng = createSeededRandom(seed);
-  const syntheticTransactions = generator({ agentId, targetProviderId, rng, intensity });
+  const syntheticTransactions = generator({ agentId: targetAgentId, targetProviderId, rng, intensity });
 
   const result = await prisma.$transaction(async (tx) => {
-    const agent = await tx.agent.findUnique({ where: { id: agentId } });
-    if (!agent) throw new Error(`Agent not found: ${agentId}`);
+    const agent = await tx.agent.findUnique({ where: { id: targetAgentId } });
+    if (!agent) throw new Error(`Agent not found: ${targetAgentId}`);
 
     const providerBalanceRow = await tx.providerBalance.findUnique({
-      where: { agentId_providerId: { agentId, providerId: targetProviderId } },
+      where: { agentId_providerId: { agentId: targetAgentId, providerId: targetProviderId } },
     });
-    
+
     if (!providerBalanceRow) {
-      throw new Error(`ProviderBalance not found for agent ${agentId} / provider ${targetProviderId}.`);
+      throw new Error(`ProviderBalance not found for agent ${targetAgentId} / provider ${targetProviderId}.`);
     }
 
     let runningPhysicalCash = agent.physicalCash;
@@ -155,7 +201,7 @@ export async function runSimulationScenario({
       runningProviderBalance = updated.providerBalance;
 
       return {
-        agentId,
+        agentId: targetAgentId,
         providerId: txnInput.providerId,
         type: txnInput.type,
         amount: txnInput.amount,
@@ -166,17 +212,15 @@ export async function runSimulationScenario({
       };
     });
 
-    await tx.transaction.createMany({
-      data: transactionsToInsert,
-    });
+    await tx.transaction.createMany({ data: transactionsToInsert });
 
     await tx.agent.update({
-      where: { id: agentId },
+      where: { id: targetAgentId },
       data: { physicalCash: runningPhysicalCash },
     });
 
     await tx.providerBalance.update({
-      where: { agentId_providerId: { agentId, providerId: targetProviderId } },
+      where: { agentId_providerId: { agentId: targetAgentId, providerId: targetProviderId } },
       data: { balance: runningProviderBalance },
     });
 
@@ -186,13 +230,13 @@ export async function runSimulationScenario({
       providerBalancesAfter: [{ providerId: targetProviderId, balanceAfter: runningProviderBalance.toString() }],
     };
   }, {
-    maxWait: 10000, 
+    maxWait: 10000,
     timeout: 20000,
   });
 
   return {
     scenarioType,
-    agentId,
+    agentId: targetAgentId, // Return the actual agent that was attacked
     transactionsCreated: result.transactionsCreated,
     providerBalancesAfter: result.providerBalancesAfter,
     physicalCashAfter: result.physicalCashAfter,
@@ -204,23 +248,33 @@ export function listAvailableScenarios() {
   return [
     {
       id: 'HIDDEN_SHORTAGE',
-      label: 'Hidden Provider Shortage (E-Money)',
-      description: 'Injects a burst of cash-in transactions against one provider, draining that provider\'s electronic balance.',
+      label: 'Hidden Provider Shortage',
+      description: 'Injects cash-in transactions to drain an electronic balance.',
     },
     {
       id: 'PHYSICAL_CASH_EXHAUSTION',
       label: 'Physical Cash Exhaustion',
-      description: 'Injects high-value cash-out transactions, draining the agent\'s physical cash drawer to trigger a dual-vector liquidity warning.',
+      description: 'Injects high-value cash-outs, draining physical cash reserves.',
     },
     {
       id: 'HIGH_VELOCITY',
-      label: 'Liquidity Pressure + Unusual Activity',
-      description: 'Injects a tight cluster of near-identical cash-out amounts within a short window, exercising structural velocity and amount-clustering rules against the 24-hour moving average.',
+      label: 'Unusual Velocity',
+      description: 'Injects tightly clustered cash-out amounts rapidly.',
     },
     {
       id: 'DATA_INCONSISTENCY',
       label: 'Data Integrity Failure',
-      description: 'Injects isolated conflicting and delayed transaction feeds to evaluate system fallback states, rule reconciliation, and safety checks under high uncertainty.',
+      description: 'Injects isolated conflicting and delayed transactions.',
+    },
+    {
+      id: 'COORDINATED_CLOSURE',
+      label: 'Coordinated Closure',
+      description: 'Sweeps balances rapidly simulating an agent exit or compromise.',
+    },
+    {
+      id: 'NEGATIVE_BALANCE',
+      label: 'Negative Balance Override',
+      description: 'Forces a negative provider balance via anomalous massive inputs.',
     },
   ];
 }

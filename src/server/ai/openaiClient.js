@@ -11,8 +11,8 @@ const openai = new OpenAI({
 
 /**
  * @typedef {Object} AdvisoryFinding
- * @property {'HIDDEN_SHORTAGE' | 'HIGH_VELOCITY' | 'DATA_INCONSISTENCY'} scenarioType
- * @property {string} providerCode - e.g. 'BKASH', 'NAGAD', 'ROCKET'
+ * @property {'HIDDEN_SHORTAGE' | 'HIGH_VELOCITY' | 'DATA_INCONSISTENCY' | 'PHYSICAL_CASH_EXHAUSTION' | 'COORDINATED_CLOSURE' | 'NEGATIVE_BALANCE'} scenarioType
+ * @property {string} [providerCode] - e.g. 'BKASH', 'NAGAD', null if holistic
  * @property {'HIGH' | 'MEDIUM' | 'LOW'} confidence - rule-engine confidence
  * @property {string} confidenceReason - rule-engine's own explanation string
  * @property {string} recommendedAction - operational next step from rule engine
@@ -34,9 +34,6 @@ const openai = new OpenAI({
  * @property {string} [errorReason] - present only when source === 'FALLBACK'
  */
 
-/**
- * Zod schema the raw OpenAI JSON response must satisfy before we trust it.
- */
 const localizedAdvisorySchema = z.object({
   reason: z.string().min(1),
   evidence: z.string().min(1),
@@ -57,14 +54,16 @@ const advisoryResponseSchema = z.object({
  */
 function buildAdvisoryPrompt(finding) {
   const system = [
-    'You are a helpful, simple assistant speaking directly to a local Mobile Financial Services (MFS) shop agent.',
+    'You are a helpful, simple assistant speaking directly to a local Mobile Financial Services (MFS) shop agent or their Area Manager.',
     'You are explaining a system alert regarding their shop\'s cash or app balances.',
-    'Keep the language extremely simple, friendly, and easy to understand for a non-technical shopkeeper.',
+    'Keep the language extremely simple, friendly, and easy to understand for a non-technical user.',
     'You NEVER decide or imply fraud. Never use words like "fraudulent", "fraud", "guilty", or "suspicious".',
     'Never suggest moving or converting funds between different providers (e.g., never suggest moving bKash balance to Nagad) — providers are completely separate.',
+    // NEW RULE: Leverage Area Profile Context
+    'If the evidence contains an "areaProfile" (like CASH_IN_DOMINANT or CASH_OUT_DOMINANT) that makes this alert unusual, briefly explain why this behavior clashes with their normal geographic pattern in the "reason" field.',
     'Respond with strict JSON only, matching this exact shape, no markdown, no commentary outside the JSON:',
     '{"en":{"reason":"","evidence":"","nextStep":""},"bn":{"reason":"","evidence":"","nextStep":""},"banglish":{"reason":"","evidence":"","nextStep":""}}',
-    'Each "reason" explains the situation in one simple sentence, under 20 words.',
+    'Each "reason" explains the situation in one simple sentence, under 25 words.', // slightly increased to allow area context
     'Each "evidence" gives the exact number or time involved, under 20 words.',
     'Each "nextStep" is a safe, polite recommendation (e.g., "Please check your balance," or "Contact your area manager"), under 15 words.',
     '"bn" must be written in Bengali script. "banglish" must be Bengali written in Latin script (transliterated), not an English translation.',
@@ -72,15 +71,11 @@ function buildAdvisoryPrompt(finding) {
     'Never state a time of day (like "রাত", "সকাল", or "বিকেল") yourself — the app inserts the exact time separately; just describe the situation and the number.',
   ].join(' ');
 
-  // Token Optimization: Strip large ID/per-transaction arrays from the evidence
-  // payload to reduce latency — the rule engine's confidenceReason already
-  // summarizes them; the raw arrays are only needed for the Risk dashboard's
-  // scatter plot / watchlist UI, not for the LLM prompt.
   const { contributingTransactionIds, contributingTransactions, ...safeEvidence } = finding.evidence || {};
 
   const user = JSON.stringify({
     scenarioType: finding.scenarioType,
-    providerCode: finding.providerCode,
+    providerCode: finding.providerCode || 'GENERAL',
     ruleEngineConfidenceReason: finding.confidenceReason,
     recommendedAction: finding.recommendedAction,
     evidence: safeEvidence,
@@ -97,35 +92,41 @@ function buildAdvisoryPrompt(finding) {
  * @returns {{ en: LocalizedAdvisory, bn: LocalizedAdvisory, banglish: LocalizedAdvisory }}
  */
 function buildFallbackAdvisory(finding) {
-  const scenarioLabelEn =
-    finding.scenarioType === 'HIDDEN_SHORTAGE'
-      ? 'a possible hidden liquidity shortage'
-      : finding.scenarioType === 'HIGH_VELOCITY'
-      ? 'unusually clustered high-velocity transactions'
-      : 'data inconsistency across providers';
+  const SCENARIO_LABELS = {
+    HIDDEN_SHORTAGE: 'a possible hidden liquidity shortage',
+    HIGH_VELOCITY: 'unusually clustered high-velocity transactions',
+    DATA_INCONSISTENCY: 'data inconsistency across providers',
+    PHYSICAL_CASH_EXHAUSTION: 'critical depletion of physical cash',
+    COORDINATED_CLOSURE: 'suspicious rapid depletion of multiple balances',
+    NEGATIVE_BALANCE: 'a critical negative balance error'
+  };
 
-  const reasonEn = `Rule-based alert: ${scenarioLabelEn} detected for ${finding.providerCode}. ${finding.confidenceReason}`;
+  const scenarioLabelEn = SCENARIO_LABELS[finding.scenarioType] || 'an unexpected system anomaly';
+  const providerText = finding.providerCode ? ` for ${finding.providerCode}` : '';
+  
+  // NEW: Append Area Context to Fallback if present
+  const areaProfile = finding.evidence?.areaProfile;
+  const areaContext = areaProfile ? ` (Context: ${areaProfile})` : '';
+
+  const reasonEn = `Rule-based alert: ${scenarioLabelEn} detected${providerText}${areaContext}. ${finding.confidenceReason}`;
   const evidenceEn = `See attached evidence for exact figures and thresholds breached.`;
   const nextStepEn = finding.recommendedAction || `Flag for operations review; confirm current balance directly with the agent before taking action.`;
 
   return {
     en: { reason: reasonEn, evidence: evidenceEn, nextStep: nextStepEn },
     bn: {
-      reason: `নিয়মভিত্তিক সতর্কতা: ${finding.providerCode}-এর জন্য সম্ভাব্য অস্বাভাবিক কার্যকলাপ শনাক্ত হয়েছে।`,
+      reason: `নিয়মভিত্তিক সতর্কতা: সম্ভাব্য অস্বাভাবিক কার্যকলাপ শনাক্ত হয়েছে।`,
       evidence: `সঠিক পরিসংখ্যানের জন্য সংযুক্ত প্রমাণ দেখুন।`,
       nextStep: `পর্যালোচনার জন্য অপারেশন টিমকে জানান; পদক্ষেপ নেওয়ার আগে এজেন্টের সাথে সরাসরি ব্যালেন্স যাচাই করুন।`,
     },
     banglish: {
-      reason: `Rule-based alert: ${finding.providerCode} er jonno oshabhabik kar-kolap shonakto hoyeche.`,
+      reason: `Rule-based alert: oshabhabik kar-kolap shonakto hoyeche.`,
       evidence: `Shothik hisheb-er jonno shongzukto evidence dekhun.`,
       nextStep: `Operations team ke review-er jonno janan; kaj korar age agent-er shathe direct balance jachai korun.`,
     },
   };
 }
 
-/**
- * Races the OpenAI call against a timeout
- */
 function withTimeout(promise, ms) {
   return Promise.race([
     promise,
