@@ -293,41 +293,55 @@ export default function AgentClientView({ agentId }) {
         )}
 
         {/* PERMANENTLY VISIBLE CARDS */}
+        {/* PERMANENTLY VISIBLE CARDS (AGENT-FRIENDLY) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          
+          {/* CARD 1: Action Required / Required Amount */}
           <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-2 flex items-center gap-2 text-slate-500">
               <Coins className="h-4 w-4" />
-              <h3 className="font-bold uppercase tracking-wider text-xs">Required Amount</h3>
+              <h3 className="font-bold uppercase tracking-wider text-xs">
+                {liquidity.forecast?.isHealthy ? 'Action Required' : 'Required Amount'}
+              </h3>
             </div>
-            <span className="text-3xl font-extrabold text-slate-900">
-              {liquidity.forecast?.requiredAmount != null 
-                ? `৳${liquidity.forecast.requiredAmount.toLocaleString('en-IN')}` 
-                : 'N/A'}
+            <span className={`text-3xl font-extrabold ${liquidity.forecast?.isHealthy ? 'text-emerald-600' : 'text-slate-900'}`}>
+              {liquidity.forecast?.isCriticalError ? 'Halted' 
+                : liquidity.forecast?.isHealthy ? 'None' 
+                : `৳${liquidity.forecast.requiredAmount?.toLocaleString('en-IN')}`}
             </span>
             <span className="mt-1 text-xs font-medium text-slate-500">
-              {liquidity.forecast?.isCriticalError ? 'System Overridden' : (isPhysicalRisk ? 'Physical Cash Needed' : `${targetProvider} E-Money Needed`)}
+              {liquidity.forecast?.isCriticalError ? 'Resolve negative balance' 
+                : liquidity.forecast?.isHealthy ? 'Balance is sufficient' 
+                : (isPhysicalRisk ? 'Physical Cash Needed' : `${targetProvider} E-Money Needed`)}
             </span>
           </div>
 
+          {/* CARD 2: Safe Runway / Est. Depletion */}
           <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-2 flex items-center gap-2 text-slate-500">
               <Clock className="h-4 w-4" />
-              <h3 className="font-bold uppercase tracking-wider text-xs">Est. Depletion</h3>
+              <h3 className="font-bold uppercase tracking-wider text-xs">
+                {liquidity.forecast?.isHealthy ? 'Safe Runway' : 'Est. Depletion'}
+              </h3>
             </div>
             <span className="text-3xl font-extrabold text-slate-900">
-              {liquidity.forecast?.criticalTime || 'Halted'}
+              {liquidity.forecast?.isCriticalError ? 'Error'
+                : liquidity.forecast?.isHealthy 
+                  ? (liquidity.forecast.minutesRemaining > 1440 ? '> 24 Hours' : `${Math.floor(liquidity.forecast.minutesRemaining / 60)} Hours`)
+                  : liquidity.forecast?.criticalTime}
             </span>
-            <span className={`mt-1 text-xs font-medium ${liquidity.forecast?.isCriticalError ? 'text-red-600' : 'text-amber-600'}`}>
-              {liquidity.forecast?.minutesRemaining != null 
-                ? `~${liquidity.forecast.minutesRemaining} mins remaining` 
-                : 'Ledger out of sync'}
+            <span className={`mt-1 text-xs font-medium ${liquidity.forecast?.isCriticalError ? 'text-red-600' : liquidity.forecast?.isHealthy ? 'text-emerald-600' : 'text-amber-600'}`}>
+              {liquidity.forecast?.isCriticalError ? 'Ledger out of sync' 
+                : liquidity.forecast?.isHealthy ? 'At current usage speed'
+                : `~${liquidity.forecast?.minutesRemaining} mins remaining`}
             </span>
           </div>
 
+          {/* CARD 3: Avg. Hourly Usage (replaces jargon "Burn Rate") */}
           <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-2 flex items-center gap-2 text-slate-500">
               <Flame className="h-4 w-4" />
-              <h3 className="font-bold uppercase tracking-wider text-xs">Burn Rate</h3>
+              <h3 className="font-bold uppercase tracking-wider text-xs">Avg. Hourly Usage</h3>
             </div>
             <span className="text-3xl font-extrabold text-slate-900">
               {liquidity.forecast?.hourlyBurnRate != null 
@@ -335,9 +349,10 @@ export default function AgentClientView({ agentId }) {
                 : 'N/A'}
             </span>
             <span className="mt-1 text-xs font-medium text-slate-500">
-              {liquidity.forecast?.isCriticalError ? 'Calculation blocked' : 'Average per hour'}
+              {liquidity.forecast?.isCriticalError ? 'Calculation blocked' : 'Based on 24h trend'}
             </span>
           </div>
+          
         </div>
       </div>
 
