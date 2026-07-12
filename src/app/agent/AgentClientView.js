@@ -12,7 +12,10 @@ import {
   TrendingUp, 
   TrendingDown, 
   X,
-  MapPin
+  MapPin,
+  Clock,   
+  Coins,   
+  Flame    
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { toast } from 'sonner';
@@ -86,12 +89,8 @@ export default function AgentClientView({ agentId }) {
           : [];
 
         if (seenAlertIdsRef.current === null) {
-          // INITIAL LOAD: Silently record existing alerts so we know what's already here.
-          // DO NOT trigger setPopupAlert here.
           seenAlertIdsRef.current = new Set(incomingAlerts.map((a) => a.id));
         } else {
-          // SUBSEQUENT FETCHES: This runs when Realtime triggers or manual sync occurs.
-          // It looks for alerts that were not present on initial load.
           const newOnes = incomingAlerts.filter(
             (a) => !seenAlertIdsRef.current.has(a.id) && !dismissed.includes(a.id)
           );
@@ -104,7 +103,6 @@ export default function AgentClientView({ agentId }) {
                 duration: 8000,
               });
             }
-            // Update the ref so we don't trigger again for these
             seenAlertIdsRef.current = new Set(incomingAlerts.map((a) => a.id));
           }
         }
@@ -120,7 +118,6 @@ export default function AgentClientView({ agentId }) {
     }
   };
 
-  // Initial Fetch & Preference Load
   useEffect(() => {
     seenAlertIdsRef.current = null;
     fetchAgentData();
@@ -133,7 +130,6 @@ export default function AgentClientView({ agentId }) {
     }
   }, [agentId]);
 
-  // REALTIME SUBSCRIPTION (Replaces setInterval)
   useEffect(() => {
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
       console.warn('Supabase env vars missing. Real-time features disabled.');
@@ -242,70 +238,108 @@ export default function AgentClientView({ agentId }) {
         </button>
       </div>
 
-      {/* Dynamic Forecast / Error Banner */}
-      {liquidity.forecast?.isCriticalError ? (
-        <div className="flex flex-col rounded-xl border p-5 shadow-sm border-l-4 bg-red-50 border-red-500 border-red-200">
-          <div className="flex items-center gap-3 mb-2 text-red-700">
-            <ShieldAlert className="h-5 w-5" />
-            <h3 className="font-bold uppercase tracking-wide text-xs">Critical Balance Error</h3>
+      {/* Dynamic Forecast & Permanent Prediction Cards */}
+      <div className="space-y-4">
+        
+        {/* Banner Section - Mutually Exclusive */}
+        {liquidity.forecast?.isCriticalError ? (
+          <div className="flex flex-col rounded-xl border p-5 shadow-sm border-l-4 bg-red-50 border-red-500 border-red-200">
+            <div className="flex items-center gap-3 mb-2 text-red-700">
+              <ShieldAlert className="h-5 w-5" />
+              <h3 className="font-bold uppercase tracking-wide text-xs">Critical Balance Error</h3>
+            </div>
+            <p className="text-sm text-slate-700 leading-relaxed font-medium">
+              {langPreference === 'bn' ? (
+                `সতর্কতা: আপনার ${liquidity.forecast.details.map(p => p.name).join(', ')} একাউন্টে নেগেটিভ ব্যালেন্স (৳${liquidity.forecast.details.map(p => Math.abs(p.amount).toLocaleString('en-IN')).join(', ')}) রয়েছে।`
+              ) : langPreference === 'banglish' ? (
+                `Sotorkota: Apnar ${liquidity.forecast.details.map(p => p.name).join(', ')} account e negative balance (৳${liquidity.forecast.details.map(p => Math.abs(p.amount).toLocaleString('en-IN')).join(', ')}) ache.`
+              ) : (
+                `Critical Alert: You have a negative balance in ${liquidity.forecast.details.map(p => p.name).join(', ')} (৳${liquidity.forecast.details.map(p => Math.abs(p.amount).toLocaleString('en-IN')).join(', ')}). Please restore the balance immediately.`
+              )}
+            </p>
           </div>
-          <p className="text-sm text-slate-700 leading-relaxed font-medium">
-            {langPreference === 'bn' ? (
-              `সতর্কতা: আপনার ${liquidity.forecast.details.map(p => p.name).join(', ')} একাউন্টে নেগেটিভ ব্যালেন্স (৳${liquidity.forecast.details.map(p => Math.abs(p.amount).toLocaleString('en-IN')).join(', ')}) রয়েছে।`
-            ) : langPreference === 'banglish' ? (
-              `Sotorkota: Apnar ${liquidity.forecast.details.map(p => p.name).join(', ')} account e negative balance (৳${liquidity.forecast.details.map(p => Math.abs(p.amount).toLocaleString('en-IN')).join(', ')}) ache.`
-            ) : (
-              `Critical Alert: You have a negative balance in ${liquidity.forecast.details.map(p => p.name).join(', ')} (৳${liquidity.forecast.details.map(p => Math.abs(p.amount).toLocaleString('en-IN')).join(', ')}). Please restore the balance immediately.`
-            )}
-          </p>
-        </div>
-      ) : liquidity.forecast?.requiredAmount ? (
-        <div className={`flex flex-col rounded-xl border p-5 shadow-sm border-l-4 ${isPhysicalRisk ? 'bg-emerald-50 border-emerald-500 border-emerald-200' : 'bg-blue-50 border-blue-500 border-blue-200'}`}>
-          <div className={`flex items-center gap-3 mb-2 ${isPhysicalRisk ? 'text-emerald-700' : 'text-blue-700'}`}>
-            <CalendarDays className="h-5 w-5" />
-            <h3 className="font-bold uppercase tracking-wide text-xs">AI Liquidity Forecast</h3>
+        ) : !liquidity.forecast?.isHealthy ? (
+          <div className={`flex flex-col rounded-xl border p-5 shadow-sm border-l-4 ${isPhysicalRisk ? 'bg-emerald-50 border-emerald-500 border-emerald-200' : 'bg-blue-50 border-blue-500 border-blue-200'}`}>
+            <div className={`flex items-center gap-3 mb-2 ${isPhysicalRisk ? 'text-emerald-700' : 'text-blue-700'}`}>
+              <CalendarDays className="h-5 w-5" />
+              <h3 className="font-bold uppercase tracking-wide text-xs">AI Liquidity Context</h3>
+            </div>
+            <p className="text-sm text-slate-700 leading-relaxed">
+              {langPreference === 'bn' ? (
+                <>লেনদেনের বর্তমান গতি অনুযায়ী, আপনার ব্যবসা সচল রাখতে আজ বিকেল <span className="font-bold text-slate-900 text-base">{liquidity.forecast.criticalTime}</span> টার মধ্যে আনুমানিক <span className="font-bold text-slate-900 text-base">৳{liquidity.forecast.requiredAmount?.toLocaleString('en-IN')}</span> {isPhysicalRisk ? 'ক্যাশ টাকার' : `${targetProvider} ই-মানি`} প্রয়োজন হতে পারে।</>
+              ) : langPreference === 'banglish' ? (
+                <>Apnar current transaction velocity onuzayi, counter chalu rakhte ajke <span className="font-bold text-slate-900 text-base">{liquidity.forecast.criticalTime}</span> er moddhe pray <span className="font-bold text-slate-900 text-base">৳{liquidity.forecast.requiredAmount?.toLocaleString('en-IN')}</span> {isPhysicalRisk ? 'physical cash' : `${targetProvider} e-money`} proyojon hote pare.</>
+              ) : (
+                <>Based on current velocity patterns, you will require approximately <span className="font-bold text-slate-900 text-base">৳{liquidity.forecast.requiredAmount?.toLocaleString('en-IN')}</span> in {isPhysicalRisk ? 'Physical Cash' : `${targetProvider} E-Money`} by <span className="font-bold text-slate-900 text-base">{liquidity.forecast.criticalTime}</span> today to guarantee uninterrupted service.</>
+              )}
+            </p>
           </div>
-          <p className="text-sm text-slate-700 leading-relaxed">
-            {langPreference === 'bn' ? (
-              <>
-                লেনদেনের বর্তমান গতি অনুযায়ী, আপনার ব্যবসা সচল রাখতে আজ বিকেল <span className="font-bold text-slate-900 text-base">{liquidity.forecast.criticalTime}</span> টার মধ্যে আনুমানিক <span className="font-bold text-slate-900 text-base">৳{liquidity.forecast.requiredAmount.toLocaleString('en-IN')}</span> {isPhysicalRisk ? 'ক্যাশ টাকার' : `${targetProvider} ই-মানি`} প্রয়োজন হতে পারে।
-              </>
-            ) : langPreference === 'banglish' ? (
-              <>
-                Apnar current transaction velocity onuzayi, counter chalu rakhte ajke <span className="font-bold text-slate-900 text-base">{liquidity.forecast.criticalTime}</span> er moddhe pray <span className="font-bold text-slate-900 text-base">৳{liquidity.forecast.requiredAmount.toLocaleString('en-IN')}</span> {isPhysicalRisk ? 'physical cash' : `${targetProvider} e-money`} proyojon hote pare.
-              </>
-            ) : (
-              <>
-                Based on current velocity patterns, you will require approximately <span className="font-bold text-slate-900 text-base">৳{liquidity.forecast.requiredAmount.toLocaleString('en-IN')}</span> in {isPhysicalRisk ? 'Physical Cash' : `${targetProvider} E-Money`} by <span className="font-bold text-slate-900 text-base">{liquidity.forecast.criticalTime}</span> today to guarantee uninterrupted service.
-              </>
-            )}
-          </p>
-          <div className="flex flex-wrap gap-3 mt-3">
-            <span className={`text-xs font-medium px-2.5 py-1 rounded-md ${isPhysicalRisk ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>
-              Burn Rate: ৳{liquidity.forecast.hourlyBurnRate?.toLocaleString('en-IN')}/hr
+        ) : (
+          <div className="flex flex-col rounded-xl border p-5 shadow-sm border-l-4 bg-emerald-50 border-emerald-500 border-emerald-200">
+            <div className="flex items-center gap-3 mb-2 text-emerald-700">
+              <CheckCircle className="h-5 w-5" />
+              <h3 className="font-bold uppercase tracking-wide text-xs">AI Liquidity Forecast</h3>
+            </div>
+            <p className="text-sm text-slate-700 leading-relaxed">
+              {langPreference === 'bn' ? (
+                'বর্তমান লেনদেনের গতি অনুযায়ী আপনার ব্যালেন্স পর্যাপ্ত আছে। আজ কোনো ক্যাশ সংকটের সম্ভাবনা নেই।'
+              ) : langPreference === 'banglish' ? (
+                'Bortoman transaction velocity onuzayi apnar balance porjapto ache. Aj kono cash shortager somvabona nei.'
+              ) : (
+                'Liquidity levels are healthy. No projected shortages for today based on current transaction velocity.'
+              )}
+            </p>
+          </div>
+        )}
+
+        {/* PERMANENTLY VISIBLE CARDS */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-2 flex items-center gap-2 text-slate-500">
+              <Coins className="h-4 w-4" />
+              <h3 className="font-bold uppercase tracking-wider text-xs">Required Amount</h3>
+            </div>
+            <span className="text-3xl font-extrabold text-slate-900">
+              {liquidity.forecast?.requiredAmount != null 
+                ? `৳${liquidity.forecast.requiredAmount.toLocaleString('en-IN')}` 
+                : 'N/A'}
             </span>
-            <span className="text-xs bg-amber-100 text-amber-800 font-medium px-2.5 py-1 rounded-md">
-              Est. Depletion: ~{liquidity.forecast.minutesRemaining} mins
+            <span className="mt-1 text-xs font-medium text-slate-500">
+              {liquidity.forecast?.isCriticalError ? 'System Overridden' : (isPhysicalRisk ? 'Physical Cash Needed' : `${targetProvider} E-Money Needed`)}
+            </span>
+          </div>
+
+          <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-2 flex items-center gap-2 text-slate-500">
+              <Clock className="h-4 w-4" />
+              <h3 className="font-bold uppercase tracking-wider text-xs">Est. Depletion</h3>
+            </div>
+            <span className="text-3xl font-extrabold text-slate-900">
+              {liquidity.forecast?.criticalTime || 'Halted'}
+            </span>
+            <span className={`mt-1 text-xs font-medium ${liquidity.forecast?.isCriticalError ? 'text-red-600' : 'text-amber-600'}`}>
+              {liquidity.forecast?.minutesRemaining != null 
+                ? `~${liquidity.forecast.minutesRemaining} mins remaining` 
+                : 'Ledger out of sync'}
+            </span>
+          </div>
+
+          <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-2 flex items-center gap-2 text-slate-500">
+              <Flame className="h-4 w-4" />
+              <h3 className="font-bold uppercase tracking-wider text-xs">Burn Rate</h3>
+            </div>
+            <span className="text-3xl font-extrabold text-slate-900">
+              {liquidity.forecast?.hourlyBurnRate != null 
+                ? `৳${liquidity.forecast.hourlyBurnRate.toLocaleString('en-IN')}` 
+                : 'N/A'}
+            </span>
+            <span className="mt-1 text-xs font-medium text-slate-500">
+              {liquidity.forecast?.isCriticalError ? 'Calculation blocked' : 'Average per hour'}
             </span>
           </div>
         </div>
-      ) : (
-        <div className="flex flex-col rounded-xl border p-5 shadow-sm border-l-4 bg-emerald-50 border-emerald-500 border-emerald-200">
-          <div className="flex items-center gap-3 mb-2 text-emerald-700">
-            <CheckCircle className="h-5 w-5" />
-            <h3 className="font-bold uppercase tracking-wide text-xs">AI Liquidity Forecast</h3>
-          </div>
-          <p className="text-sm text-slate-700 leading-relaxed">
-            {langPreference === 'bn' ? (
-              'বর্তমান লেনদেনের গতি অনুযায়ী আপনার ব্যালেন্স পর্যাপ্ত আছে। আজ কোনো ক্যাশ সংকটের সম্ভাবনা নেই।'
-            ) : langPreference === 'banglish' ? (
-              'Bortoman transaction velocity onuzayi apnar balance porjapto ache. Aj kono cash shortager somvabona nei.'
-            ) : (
-              'Liquidity levels are healthy. No projected shortages for today based on current transaction velocity.'
-            )}
-          </p>
-        </div>
-      )}
+      </div>
 
       {/* Unified Liquidity Balances */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">

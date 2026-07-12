@@ -6,27 +6,9 @@ import { runSimulationScenario } from '@/server/services/simulationEngine';
 import { evaluateAgentAnomalies } from '@/server/services/anomalyRules';
 import { generateAlertAdvisory } from '@/server/ai/openaiClient';
 
-/** Statuses that count as "already open" for dedup purposes. */
 const OPEN_ALERT_STATUSES = ['PENDING', 'ACKNOWLEDGED', 'IN_PROGRESS'];
-
-/**
- * Cool-down window after a case closes before the same agent+scenario+
- * provider combination is allowed to open a fresh alert. Prevents a value
- * oscillating near a rule's threshold from opening/closing/reopening an
- * alert every simulation run (alert fatigue).
- */
 const ALERT_COOLDOWN_MINUTES = 10;
 
-/**
- * Maps this run's rule-engine findings to Agent.riskStatus. Simple and
- * explainable by design: any HIGH-confidence finding means CRITICAL, any
- * finding at all means WARNING, no findings means SAFE. This is evaluated
- * fresh on every simulation run, so the badge reflects the agent's live
- * state instead of staying frozen at its seeded value.
- *
- * @param {import('@/server/services/anomalyRules').AnomalyFinding[]} findings
- * @returns {'SAFE' | 'WARNING' | 'CRITICAL'}
- */
 function computeRiskStatus(findings) {
   if (findings.length === 0) return 'SAFE';
   if (findings.some((f) => f.confidence === 'HIGH')) return 'CRITICAL';
@@ -40,20 +22,15 @@ const requestSchema = z.object({
     'DATA_INCONSISTENCY',
     'PHYSICAL_CASH_EXHAUSTION',
     'NEGATIVE_BALANCE',
-    'COORDINATED_CLOSURE' // Added missing scenario
+    'COORDINATED_CLOSURE'
   ]),
   agentId: z.string().min(1, 'agentId is required'),
   targetProviderId: z.string().min(1, 'targetProviderId is required'),
   seed: z.number().int().optional(),
+  // NEW: Allow the API client to trigger the mismatch attack
+  forceProfileMismatch: z.boolean().optional().default(false), 
 });
 
-/**
- * Checks for an already-open Alert matching this finding, to avoid
- * spawning duplicate alerts if the same scenario is triggered repeatedly
- *
- * @param {import('@/server/services/anomalyRules').AnomalyFinding} finding
- * @returns {Promise<Object|null>}
- */
 async function findExistingOpenAlert(finding) {
   return prisma.alert.findFirst({
     where: {
@@ -65,14 +42,6 @@ async function findExistingOpenAlert(finding) {
   });
 }
 
-/**
- * Finds a recently RESOLVED/DISMISSED alert for this exact agent+scenario+
- * provider combination, closed within the cool-down window — used to
- * suppress an immediate reopen of a case an operator just closed.
- *
- * @param {import('@/server/services/anomalyRules').AnomalyFinding} finding
- * @returns {Promise<Object|null>}
- */
 async function findRecentlyClosedAlert(finding) {
   const cooldownStart = new Date(Date.now() - ALERT_COOLDOWN_MINUTES * 60_000);
   return prisma.alert.findFirst({
@@ -87,13 +56,6 @@ async function findRecentlyClosedAlert(finding) {
   });
 }
 
-/**
- * Persists a single finding as a new Alert, then attaches an AI-generated
- * explanation (or the deterministic fallback if AI fails).
- *
- * @param {import('@/server/services/anomalyRules').AnomalyFinding} finding
- * @returns {Promise<Object>} the final, explanation-attached Alert row
- */
 async function createAlertFromFinding(finding) {
   const provider = finding.providerId
     ? await prisma.provider.findUnique({ where: { id: finding.providerId } })
@@ -135,7 +97,6 @@ export async function POST(request) {
   const startedAt = Date.now();
 
   try {
-    // Security checkpoint: Only operations staff can trigger a network simulation
     const auth = await requireRole(['OPS']);
     if (!auth.authorized) {
       return errorResponse(auth.message, auth.status);
@@ -153,19 +114,27 @@ export async function POST(request) {
       return errorResponse('Invalid request body.', 400, parsed.error.flatten());
     }
 
-    const { scenarioType, agentId, targetProviderId, seed } = parsed.data;
+    const { scenarioType, agentId, targetProviderId, seed, forceProfileMismatch } = parsed.data;
 
+    // 1. Run Simulation
     const simulation = await runSimulationScenario({
       scenarioType,
       agentId,
       targetProviderId,
       seed,
+      forceProfileMismatch,
     });
 
-    const findings = await evaluateAgentAnomalies(agentId);
+    // CRITICAL FIX: If forceProfileMismatch was true, the engine attacked a DIFFERENT agent.
+    // We must evaluate the actual agent that was attacked, not the original request ID.
+    const actualAgentId = simulation.agentId;
 
+    // 2. Evaluate Rules against the actually attacked agent
+    const findings = await evaluateAgentAnomalies(actualAgentId);
+
+    // 3. Update Risk Status
     await prisma.agent.update({
-      where: { id: agentId },
+      where: { id: actualAgentId },
       data: { riskStatus: computeRiskStatus(findings) },
     });
 
@@ -176,12 +145,10 @@ export async function POST(request) {
       const existing = await findExistingOpenAlert(finding);
 
       if (existing) {
-        // OVERWRITE LOGIC: Updates the old alert details with the new dynamic telemetry data!
         const provider = finding.providerId
           ? await prisma.provider.findUnique({ where: { id: finding.providerId } })
           : null;
 
-        // 1. Fire off the fresh calculations to OpenAI
         const advisory = await generateAlertAdvisory({
           scenarioType: finding.scenarioType,
           providerCode: provider?.code ?? 'UNKNOWN',
@@ -192,7 +159,6 @@ export async function POST(request) {
           targetStakeholder: finding.targetStakeholder,
         });
 
-        // 2. Update the existing row in the database
         const updatedAlert = await prisma.alert.update({
           where: { id: existing.id },
           data: {
@@ -201,14 +167,10 @@ export async function POST(request) {
             evidence: finding.evidence,
             explanations: advisory.explanations,
             source: advisory.source === 'AI' ? 'HYBRID' : 'RULE_BASED',
-            createdAt: new Date(), // Bumps the card to the top of the feed list
+            createdAt: new Date(), 
           },
         });
 
-        // 3. Log the refresh on the audit timeline — otherwise a case that
-        // gets re-triggered several times looks, from the timeline alone,
-        // like nothing happened between creation and whatever action an
-        // operator eventually takes.
         await prisma.alertEvent.create({
           data: {
             alertId: existing.id,
@@ -223,10 +185,6 @@ export async function POST(request) {
         continue;
       }
 
-      // Cool-down: if this exact agent+scenario+provider combination was
-      // just resolved/dismissed, don't immediately reopen a fresh alert —
-      // a value oscillating near a threshold would otherwise open/close/
-      // reopen a case on every single run.
       const recentlyClosed = await findRecentlyClosedAlert(finding);
       if (recentlyClosed) {
         alertsSuppressed.push({
@@ -237,7 +195,6 @@ export async function POST(request) {
         continue;
       }
 
-      // Otherwise create a normal new alert...
       const alert = await createAlertFromFinding(finding);
       alertsCreated.push(alert);
     }
@@ -247,7 +204,7 @@ export async function POST(request) {
     await prisma.simulationRun.create({
       data: {
         scenarioType,
-        agentId,
+        agentId: actualAgentId,
         seed: seed ?? null,
         transactionsCreated: simulation.transactionsCreated,
         alertsCreated: alertsCreated.length,

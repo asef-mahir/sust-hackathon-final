@@ -2,13 +2,8 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/apiAuth';
 import { successResponse, errorResponse } from '@/lib/apiResponse';
 
-/** Statuses considered "active" for the activeAlerts summary. */
 const OPEN_ALERT_STATUSES = ['PENDING', 'ACKNOWLEDGED', 'IN_PROGRESS'];
 
-/**
- * @param {Request} request
- * @param {{ params: Promise<{ id: string }> }} context
- */
 export async function GET(request, { params }) {
   try {
     const auth = await requireAuth();
@@ -21,12 +16,10 @@ export async function GET(request, { params }) {
       return errorResponse('Agent id is required.', 400);
     }
 
-    // Security checkpoint: Agents can only view their own designated shop
     if (auth.owner.role === 'AGENT' && auth.owner.managedAgentId !== agentId) {
       return errorResponse('You are not authorized to view this agent.', 403);
     }
 
-    // 1. Fetch Agent & Active Alerts
     const agent = await prisma.agent.findUnique({
       where: { id: agentId },
       include: {
@@ -52,7 +45,6 @@ export async function GET(request, { params }) {
       return errorResponse(`Agent not found: ${agentId}`, 404);
     }
 
-    // 2. Fetch Recent Transactions for Dashboard Graphs
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const recentTransactions = await prisma.transaction.findMany({
       where: { 
@@ -60,7 +52,7 @@ export async function GET(request, { params }) {
         timestamp: { gte: twentyFourHoursAgo }
       },
       orderBy: { timestamp: 'desc' },
-      take: 50, // Limit to recent 50 for the graph to keep the payload light
+      take: 50,
       select: {
         id: true,
         type: true,
@@ -70,7 +62,6 @@ export async function GET(request, { params }) {
       }
     });
 
-    // Calculate Daily Stats for the Graph Header
     let totalCashIn = 0;
     let totalCashOut = 0;
     const chartDataFormatted = recentTransactions.map(tx => {
@@ -86,7 +77,6 @@ export async function GET(request, { params }) {
       };
     });
 
-    // 3. Calculate Balances
     const physicalCashNumber = agent.physicalCash.toNumber();
     const providerBalancesRaw = agent.balances.map((b) => ({
       providerId: b.providerId,
@@ -111,12 +101,11 @@ export async function GET(request, { params }) {
           : 0,
     }));
 
-    // 4. Determine Banner State (Negative Checks FIRST)
+    // 4. Determine Banner State
     let forecast = null;
     const negativeProviders = providerBalancesRaw.filter(p => p.balanceNumber < 0);
 
     if (negativeProviders.length > 0) {
-      // Critical Error Override: Triggers the red UI banner on the frontend
       forecast = {
         isCriticalError: true,
         errorType: 'NEGATIVE_BALANCE',
@@ -126,60 +115,67 @@ export async function GET(request, { params }) {
         }))
       };
     } else {
-      // Standard AI Forecast Generation (Only runs if balances are valid)
+      // ALWAYS calculate a forecast even if healthy
       const hiddenShortageAlert = agent.alerts.find(a => a.scenarioType === 'HIDDEN_SHORTAGE');
       
+      let hourlyBurnRate = 0;
+      let projectedDepletionMinutes = 0;
+      let primaryRiskVector = 'PROVIDER_BALANCE';
+      let providerCode = null;
+      let isHealthy = true;
+
       if (hiddenShortageAlert && hiddenShortageAlert.evidence) {
         const evidenceData = typeof hiddenShortageAlert.evidence === 'string'
           ? JSON.parse(hiddenShortageAlert.evidence)
           : hiddenShortageAlert.evidence;
-
-        // Fetch dynamic burn rate from evidence, fallback to a default (e.g. 4500) if missing
-        const hourlyBurnRate = evidenceData.hourlyBurnRate || 4500;
-
-        // --- NEW DYNAMIC PEAK TARGET LOGIC ---
-        // Always format/derive against Bangladesh time (Asia/Dhaka)
-        const dhakaNowString = new Date().toLocaleString("en-US", { timeZone: 'Asia/Dhaka' });
-        const dhakaNow = new Date(dhakaNowString);
-        const currentHour = dhakaNow.getHours();
-        
-        let targetDate = new Date(dhakaNow);
-        let targetTimeLabel = '';
-
-        if (currentHour < 10) {
-          // Target is 10:00 AM today
-          targetDate.setHours(10, 0, 0, 0);
-          targetTimeLabel = '10:00 AM';
-        } else if (currentHour < 16) {
-          // Target is 4:00 PM today
-          targetDate.setHours(16, 0, 0, 0);
-          targetTimeLabel = '4:00 PM';
-        } else {
-          // Target is 10:00 AM tomorrow
-          targetDate.setDate(targetDate.getDate() + 1);
-          targetDate.setHours(10, 0, 0, 0);
-          targetTimeLabel = '10:00 AM (Tomorrow)';
-        }
-
-        // Calculate time difference in hours
-        const diffMs = targetDate.getTime() - dhakaNow.getTime();
-        const hoursRemaining = diffMs / (1000 * 60 * 60);
-
-        // Calculate dynamic amount based on hours remaining & round up to nearest 100 for clean numbers
-        const exactRequiredAmount = hoursRemaining * hourlyBurnRate;
-        const requiredAmount = Math.ceil(exactRequiredAmount / 100) * 100;
-
-        forecast = {
-          isCriticalError: false,
-          criticalTime: targetTimeLabel,
-          periodBn: 'দিন', // 10 AM and 4 PM are always daytime
-          requiredAmount,
-          hourlyBurnRate: Math.round(hourlyBurnRate),
-          minutesRemaining: Math.floor(diffMs / (1000 * 60)),
-          primaryRiskVector: evidenceData.primaryRiskVector || 'PROVIDER_BALANCE',
-          providerCode: evidenceData.thinProvider?.providerCode || null
-        };
+        hourlyBurnRate = evidenceData.hourlyBurnRate || 4500;
+        projectedDepletionMinutes = evidenceData.projectedDepletionMinutes || 0;
+        primaryRiskVector = evidenceData.primaryRiskVector || 'PROVIDER_BALANCE';
+        providerCode = evidenceData.thinProvider?.providerCode || null;
+        isHealthy = false;
+      } else {
+        // Safe baseline based on 24h activity
+        hourlyBurnRate = (totalCashOut / 24) || 2000; 
+        projectedDepletionMinutes = hourlyBurnRate > 0 ? Math.floor((totalLiquidityNumber / hourlyBurnRate) * 60) : 9999;
       }
+
+      // --- DYNAMIC PEAK TARGET LOGIC ---
+      const dhakaNowString = new Date().toLocaleString("en-US", { timeZone: 'Asia/Dhaka' });
+      const dhakaNow = new Date(dhakaNowString);
+      const currentHour = dhakaNow.getHours();
+      
+      let targetDate = new Date(dhakaNow);
+      let targetTimeLabel = '';
+
+      if (currentHour < 10) {
+        targetDate.setHours(10, 0, 0, 0);
+        targetTimeLabel = '10:00 AM';
+      } else if (currentHour < 16) {
+        targetDate.setHours(16, 0, 0, 0);
+        targetTimeLabel = '4:00 PM';
+      } else {
+        targetDate.setDate(targetDate.getDate() + 1);
+        targetDate.setHours(10, 0, 0, 0);
+        targetTimeLabel = '10:00 AM (Tomorrow)';
+      }
+
+      const diffMs = targetDate.getTime() - dhakaNow.getTime();
+      const hoursRemaining = diffMs / (1000 * 60 * 60);
+
+      const exactRequiredAmount = hoursRemaining * hourlyBurnRate;
+      const requiredAmount = Math.ceil(exactRequiredAmount / 100) * 100;
+
+      forecast = {
+        isCriticalError: false,
+        isHealthy,
+        criticalTime: targetTimeLabel,
+        periodBn: 'দিন',
+        requiredAmount: Math.max(0, requiredAmount),
+        hourlyBurnRate: Math.round(hourlyBurnRate),
+        minutesRemaining: projectedDepletionMinutes,
+        primaryRiskVector,
+        providerCode
+      };
     }
 
     return successResponse(
@@ -200,12 +196,11 @@ export async function GET(request, { params }) {
           forecast,
         },
         activeAlerts: agent.alerts,
-        // Payload for the Agent's frontend charts
         chartData: {
           dailyStats: {
             totalCashIn,
             totalCashOut,
-            netFlow: totalCashOut - totalCashIn // Positive means losing physical cash
+            netFlow: totalCashOut - totalCashIn
           },
           recentTransactions: chartDataFormatted
         }
