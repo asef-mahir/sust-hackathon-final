@@ -1,9 +1,12 @@
 import OpenAI from 'openai';
+import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import { recordAiCall } from '@/lib/metrics';
 
 const OPENAI_TIMEOUT_MS = 6000;
-const OPENAI_MODEL = 'gpt-4o-mini';
+const OPENAI_MODEL = 'gpt-5';
+const OPENAI_MAX_ATTEMPTS = 2;
+const OPENAI_RETRY_DELAY_MS = 300;
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -45,6 +48,14 @@ const advisoryResponseSchema = z.object({
   bn: localizedAdvisorySchema,
   banglish: localizedAdvisorySchema,
 });
+
+/**
+ * OpenAI Structured Outputs format derived from the same zod schema used to
+ * validate the result. This makes the model's JSON schema-conformant by
+ * construction (the API enforces it server-side), instead of relying on
+ * `json_object` mode plus a hopeful post-hoc `.parse()`.
+ */
+const advisoryResponseFormat = zodResponseFormat(advisoryResponseSchema, 'trilingual_advisory');
 
 /**
  * Builds the system + user prompt pair for a given finding.
@@ -136,8 +147,50 @@ function withTimeout(promise, ms) {
   ]);
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Issues a single structured-output request to OpenAI and returns the
+ * validated `{ en, bn, banglish }` shape. Throws on refusal, timeout, or any
+ * transport/schema error — callers decide how to react (retry, fallback).
+ *
+ * @param {{ system: string, user: string }} prompt
+ * @returns {Promise<{ en: LocalizedAdvisory, bn: LocalizedAdvisory, banglish: LocalizedAdvisory }>}
+ */
+async function requestAdvisoryCompletion({ system, user }) {
+  const completion = await withTimeout(
+    openai.chat.completions.parse({
+      model: OPENAI_MODEL,
+      response_format: advisoryResponseFormat,
+      temperature: 0.3,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+    }),
+    OPENAI_TIMEOUT_MS
+  );
+
+  const message = completion.choices?.[0]?.message;
+  if (message?.refusal) {
+    throw new Error(`OpenAI refused the request: ${message.refusal}`);
+  }
+  if (!message?.parsed) {
+    throw new Error('OpenAI response did not include parsed structured output');
+  }
+
+  return message.parsed;
+}
+
 /**
  * Generates a bilingual/trilingual advisory explanation for a rule-engine finding.
+ *
+ * Uses OpenAI Structured Outputs (JSON schema derived from the same zod
+ * schema used elsewhere) so the response is guaranteed to match the shape
+ * the UI expects, with one bounded retry for transient failures before
+ * falling back to the deterministic local explanation.
  *
  * @param {AdvisoryFinding} finding
  * @returns {Promise<AdvisoryResult>}
@@ -154,47 +207,27 @@ export async function generateAlertAdvisory(finding) {
     };
   }
 
-  const { system, user } = buildAdvisoryPrompt(finding);
+  const prompt = buildAdvisoryPrompt(finding);
 
-  try {
-    const completion = await withTimeout(
-      openai.chat.completions.create({
-        model: OPENAI_MODEL,
-        response_format: { type: 'json_object' },
-        temperature: 0.3,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ],
-      }),
-      OPENAI_TIMEOUT_MS
-    );
-
-    const rawContent = completion.choices?.[0]?.message?.content;
-    if (!rawContent) {
-      throw new Error('OpenAI response contained no message content');
+  let lastError;
+  for (let attempt = 1; attempt <= OPENAI_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const explanations = await requestAdvisoryCompletion(prompt);
+      recordAiCall({ durationMs: Date.now() - startedAt, success: true, fallback: false });
+      return { source: 'AI', explanations };
+    } catch (error) {
+      lastError = error;
+      const isLastAttempt = attempt === OPENAI_MAX_ATTEMPTS;
+      if (!isLastAttempt) await sleep(OPENAI_RETRY_DELAY_MS);
     }
-
-    const parsedJson = JSON.parse(rawContent);
-    const validated = advisoryResponseSchema.parse(parsedJson);
-
-    recordAiCall({ durationMs: Date.now() - startedAt, success: true, fallback: false });
-    return {
-      source: 'AI',
-      explanations: {
-        en: validated.en,
-        bn: validated.bn,
-        banglish: validated.banglish,
-      },
-    };
-  } catch (error) {
-    recordAiCall({ durationMs: Date.now() - startedAt, success: false, fallback: true });
-    return {
-      source: 'FALLBACK',
-      explanations: buildFallbackAdvisory(finding),
-      errorReason: error instanceof Error ? error.message : 'Unknown error',
-    };
   }
+
+  recordAiCall({ durationMs: Date.now() - startedAt, success: false, fallback: true });
+  return {
+    source: 'FALLBACK',
+    explanations: buildFallbackAdvisory(finding),
+    errorReason: lastError instanceof Error ? lastError.message : 'Unknown error',
+  };
 }
 
 export { buildAdvisoryPrompt, buildFallbackAdvisory };
