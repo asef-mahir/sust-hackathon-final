@@ -3,6 +3,8 @@
 > **Community Hackathon: bKash presents SUST CSE Carnival 2026**  
 > Multi-provider MFS agent liquidity monitoring, anomaly detection, and operational coordination platform.
 
+**Live Deployment:** https://finstream-ops.vercel.app/
+
 ---
 
 ## Table of Contents
